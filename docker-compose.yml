@@ -1,0 +1,16 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment: {POSTGRES_DB: timberpos, POSTGRES_USER: timberpos, POSTGRES_PASSWORD: timberpos}
+    volumes: [data:/var/lib/postgresql/data]
+  api:
+    build: ./backend
+    env_file: .env
+    environment: {DATABASE_URL: postgresql+psycopg://timberpos:timberpos@db:5432/timberpos}
+    ports: ["8000:8000"]
+    depends_on: [db]
+  web:
+    build: {context: ./frontend, args: {VITE_API_URL: http://localhost:8000}}
+    ports: ["5173:80"]
+    depends_on: [api]
+volumes: {data: {}}
