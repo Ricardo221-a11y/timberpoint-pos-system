@@ -1,1 +1,68 @@
-const B=import.meta.env.VITE_API_URL||'http://localhost:8000';export const tk=()=>localStorage.getItem('token');export async function api(p,o={}){let h={'Content-Type':'application/json',...(o.headers||{})};if(tk())h.Authorization='Bearer '+tk();let r=await fetch(B+p,{...o,headers:h});let d={};try{d=await r.json()}catch{}if(!r.ok)throw new Error(d.detail||'Request failed');return d}export async function login(email,password){let v=await api('/api/auth/login',{method:'POST',body:JSON.stringify({email,password})});localStorage.setItem('token',v.access_token);return v}
+const API_BASE =
+  import.meta.env.VITE_API_URL ||
+  "http://localhost:8000";
+
+export const tk = () =>
+  localStorage.getItem("token");
+
+export async function api(path, options = {}) {
+  const headers = {
+    "Content-Type": "application/json",
+    ...(options.headers || {}),
+  };
+
+  const token = tk();
+
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  const response = await fetch(
+    `${API_BASE}${path}`,
+    {
+      ...options,
+      headers,
+    }
+  );
+
+  let data = {};
+
+  try {
+    data = await response.json();
+  } catch {
+    // Ignore JSON parse errors
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      data.detail ||
+      data.message ||
+      "Request failed"
+    );
+  }
+
+  return data;
+}
+
+export async function login(
+  email,
+  password
+) {
+  const result = await api(
+    "/api/auth/login",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        email,
+        password,
+      }),
+    }
+  );
+
+  localStorage.setItem(
+    "token",
+    result.access_token
+  );
+
+  return result;
+}
