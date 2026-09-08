@@ -408,27 +408,6 @@ function POS() {
   );
 }
 
-function AccountsLayout({ children }) {
-  return (
-    <div>
-      <div className="top">
-        <h1>Accounts & Financial Workspace</h1>
-        <p>Accounts receivable, payable liabilities, double-entry general ledger, and expenses</p>
-      </div>
-      <div className="tabs">
-        <Link to="overview" className="tab">Overview</Link>
-        <Link to="receivables" className="tab">Receivables (AR)</Link>
-        <Link to="payables" className="tab">Payables (AP)</Link>
-        <Link to="gl" className="tab">General Ledger (GL)</Link>
-        <Link to="expenses" className="tab">Expenses</Link>
-      </div>
-      <div style={{ marginTop: 16 }}>
-        <Outlet />
-      </div>
-    </div>
-  );
-}
-
 function AccountsOverview() {
   const [d, setD] = useState({});
 
@@ -761,6 +740,136 @@ function Ledger() {
         </table>
       </div>
     </>
+  );
+}
+
+function TablePage({ title, path }) {
+  const [rows, setRows] = useState([]);
+  const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    api(path).then(setRows).catch(() => {});
+  }, [path]);
+
+  const cols = {
+    "/api/products": [
+      { k: "sku", l: "SKU" },
+      { k: "barcode", l: "Barcode" },
+      { k: "name", l: "Name" },
+      { k: "category", l: "Category" },
+      { k: "dimensions", l: "Dimensions" },
+      { k: "cost", l: "Cost", fmt: (v) => `$${Number(v || 0).toFixed(2)}` },
+      { k: "retail", l: "Retail", fmt: (v) => `$${Number(v || 0).toFixed(2)}` },
+      { k: "contractor", l: "Contractor", fmt: (v) => `$${Number(v || 0).toFixed(2)}` },
+      { k: "bulk", l: "Bulk", fmt: (v) => `$${Number(v || 0).toFixed(2)}` },
+      { k: "quantity", l: "Stock", fmt: (v) => Number(v || 0).toFixed(0) },
+    ],
+    "/api/sales": [
+      { k: "number", l: "Sale #" },
+      { k: "site_id", l: "Site" },
+      { k: "customer_id", l: "Customer" },
+      { k: "currency", l: "Currency" },
+      { k: "subtotal", l: "Subtotal", fmt: (v) => `$${Number(v || 0).toFixed(2)}` },
+      { k: "discount", l: "Discount", fmt: (v) => `$${Number(v || 0).toFixed(2)}` },
+      { k: "total", l: "Total", fmt: (v) => `$${Number(v || 0).toFixed(2)}` },
+      { k: "amount_paid", l: "Paid", fmt: (v) => `$${Number(v || 0).toFixed(2)}` },
+    ],
+    "/api/customers": [
+      { k: "code", l: "Code" },
+      { k: "name", l: "Name" },
+      { k: "kind", l: "Kind" },
+      { k: "phone", l: "Phone" },
+      { k: "email", l: "Email" },
+      { k: "credit_limit", l: "Credit Limit", fmt: (v) => `$${Number(v || 0).toFixed(2)}` },
+      { k: "balance", l: "Balance", fmt: (v) => `$${Number(v || 0).toFixed(2)}` },
+    ],
+    "/api/suppliers": [
+      { k: "code", l: "Code" },
+      { k: "name", l: "Name" },
+      { k: "phone", l: "Phone" },
+      { k: "email", l: "Email" },
+      { k: "balance", l: "Balance", fmt: (v) => `$${Number(v || 0).toFixed(2)}` },
+    ],
+  };
+
+  const schema = cols[path] || (rows[0]
+    ? Object.keys(rows[0]).map((k) => ({ k, l: k }))
+    : []);
+
+  const shown = rows.filter((r) =>
+    search
+      ? Object.values(r)
+          .join(" ")
+          .toLowerCase()
+          .includes(search.toLowerCase())
+      : true
+  );
+
+  return (
+    <>
+      <div className="top">
+        <div>
+          <h1>{title}</h1>
+          <div>{rows.length} records</div>
+        </div>
+        <div className="actions">
+          <input
+            style={{ padding: 10, minWidth: 260 }}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search..."
+          />
+        </div>
+      </div>
+      <div className="card">
+        <table className="table">
+          <thead>
+            <tr>
+              {schema.map((c) => (
+                <th key={c.k}>{c.l}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {shown.map((r, i) => (
+              <tr key={r.id ?? i}>
+                {schema.map((c) => (
+                  <td key={c.k}>{c.fmt ? c.fmt(r[c.k]) : r[c.k] ?? ""}</td>
+                ))}
+              </tr>
+            ))}
+            {shown.length === 0 && (
+              <tr>
+                <td colSpan={schema.length || 1} style={{ textAlign: "center", color: "#888", padding: 24 }}>
+                  No records
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+function AccountsLayout() {
+  return (
+    <div>
+      <div className="top">
+        <h1>Accounts &amp; Financial Workspace</h1>
+        <p>Accounts receivable, payable liabilities, double-entry general ledger, and expenses</p>
+      </div>
+      <div className="tabs">
+        <Link to="overview" className="tab">Overview</Link>
+        <Link to="receivables" className="tab">Receivables (AR)</Link>
+        <Link to="payables" className="tab">Payables (AP)</Link>
+        <Link to="gl" className="tab">General Ledger (GL)</Link>
+        <Link to="expenses" className="tab">Expenses</Link>
+      </div>
+      <div style={{ marginTop: 16 }}>
+        <Outlet />
+      </div>
+    </div>
   );
 }
 
