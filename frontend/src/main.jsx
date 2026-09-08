@@ -118,24 +118,24 @@ function Login() {
 }
 
 function POS() {
-  let [products, setProducts] = useState([]),
-    [sites, setSites] = useState([]),
-    [customers, setCustomers] = useState([]),
-    [site, setSite] = useState("") ,
-    [cust, setCust] = useState("") ,
-    [level, setLevel] = useState("retail"),
-    [currency, setCurrency] = useState("USD"),
-    [rate, setRate] = useState(1),
-    [search, setSearch] = useState(""),
-    [category, setCategory] = useState("All"),
-    [cart, setCart] = useState([]),
-    [paid, setPaid] = useState(0),
-    [method, setMethod] = useState("cash"),
-    [last, setLast] = useState(null),
-    [msg, setMsg] = useState(""),
-    [toast, setToast] = useState("");
+  const [products, setProducts] = useState([]);
+  const [sites, setSites] = useState([]);
+  const [customers, setCustomers] = useState([]);
+  const [site, setSite] = useState("");
+  const [cust, setCust] = useState("");
+  const [level, setLevel] = useState("retail");
+  const [currency, setCurrency] = useState("USD");
+  const [rate, setRate] = useState(1);
+  const [search, setSearch] = useState("");
+  const [category, setCategory] = useState("All");
+  const [cart, setCart] = useState([]);
+  const [paid, setPaid] = useState("");
+  const [method, setMethod] = useState("cash");
+  const [last, setLast] = useState(null);
+  const [msg, setMsg] = useState("");
+  const [toast, setToast] = useState("");
 
-  let load = () =>
+  const load = () =>
     Promise.all([
       api("/api/products" + (site ? `?site_id=${site}` : "")),
       api("/api/sites"),
@@ -156,35 +156,33 @@ function POS() {
     ...Array.from(new Set(products.map((p) => p.category).filter(Boolean))),
   ];
 
-  let shown = products.filter((x) => {
-    const matchesSearch = (x.name + " " + x.sku + " " + x.barcode)
-      .toLowerCase()
-      .includes(search.toLowerCase());
-    const matchesCat = category === "All" || x.category === category;
-    return matchesSearch && matchesCat;
+  const shown = products.filter((x) => {
+    const hay = (x.name + " " + x.sku + " " + x.barcode + " " + (x.dimensions || "")).toLowerCase();
+    return (
+      hay.includes(search.toLowerCase()) &&
+      (category === "All" || x.category === category)
+    );
   });
 
-  let subtotal = cart.reduce((a, x) => a + x.quantity * x.unit_price, 0);
-  let tax = subtotal * 0.08;
-  let total = subtotal + tax;
-  let totalConverted = total * rate;
-  let change = Number(paid) - totalConverted;
+  const subtotal = cart.reduce((a, x) => a + x.quantity * x.unit_price, 0);
+  const tax = subtotal * 0.08;
+  const total = subtotal + tax;
+  const totalConverted = total * rate;
+  const paidNum = Number(paid) || 0;
+  const change = paidNum - totalConverted;
 
   function showToast(text) {
     setToast(text);
-    setTimeout(() => setToast(""), 2200);
+    setTimeout(() => setToast(""), 2000);
   }
 
   function add(p) {
     setCart((c) => {
-      let z = c.find((x) => x.product_id === p.id);
-      const lineTotal = (p[level] || 0).toFixed(2);
-      showToast(`Added: 1x ${p.name} ($${lineTotal})`);
-      return z
+      const existing = c.find((x) => x.product_id === p.id);
+      showToast(`+1 ${p.name}`);
+      return existing
         ? c.map((x) =>
-            x.product_id === p.id
-              ? { ...x, quantity: x.quantity + 1 }
-              : x
+            x.product_id === p.id ? { ...x, quantity: x.quantity + 1 } : x
           )
         : [
             ...c,
@@ -193,35 +191,35 @@ function POS() {
               name: p.name,
               sku: p.sku,
               quantity: 1,
-              unit_price: p[level],
+              unit_price: Number(p[level] || 0),
             },
           ];
     });
   }
 
-  function inc(pid, delta) {
+  function setQty(pid, qty) {
+    const n = Math.max(0, Number(qty) || 0);
     setCart((c) =>
-      c
-        .map((x) =>
-          x.product_id === pid ? { ...x, quantity: Math.max(0, x.quantity + delta) } : x
-        )
-        .filter((x) => x.quantity > 0)
+      n <= 0
+        ? c.filter((x) => x.product_id !== pid)
+        : c.map((x) => (x.product_id === pid ? { ...x, quantity: n } : x))
     );
   }
 
   function removeLine(pid) {
-    setCart((c) => c.filter((y) => y.product_id !== pid));
+    setCart((c) => c.filter((x) => x.product_id !== pid));
   }
 
   function clearAll() {
     if (cart.length && window.confirm("Clear the current ticket?")) {
       setCart([]);
-      setPaid(0);
+      setPaid("");
     }
   }
 
   async function complete() {
-    let payload = {
+    if (!cart.length) return;
+    const payload = {
       number: "SALE-" + Date.now(),
       site_id: Number(site),
       customer_id: cust ? Number(cust) : null,
@@ -231,11 +229,10 @@ function POS() {
       lines: cart,
       discount: 0,
       payment_method: method,
-      amount_paid: Number(paid),
+      amount_paid: paidNum,
     };
-
     try {
-      let s = navigator.onLine
+      const s = navigator.onLine
         ? await api("/api/sales", {
             method: "POST",
             body: JSON.stringify(payload),
@@ -243,17 +240,16 @@ function POS() {
         : null;
 
       if (!navigator.onLine) {
-        let q = JSON.parse(localStorage.getItem("offlineSales") || "[]");
+        const q = JSON.parse(localStorage.getItem("offlineSales") || "[]");
         q.push(payload);
         localStorage.setItem("offlineSales", JSON.stringify(q));
         setMsg("Sale queued offline");
       } else {
         setLast(s);
-        setMsg("Sale completed");
+        setMsg("Sale completed — receipt ready");
       }
-
       setCart([]);
-      setPaid(0);
+      setPaid("");
       load();
     } catch (e) {
       setMsg(e.message);
@@ -261,274 +257,382 @@ function POS() {
   }
 
   async function sync() {
-    let q = JSON.parse(localStorage.getItem("offlineSales") || "[]");
-    for (let s of q)
-      await api("/api/sales", {
-        method: "POST",
-        body: JSON.stringify(s),
-      });
+    const q = JSON.parse(localStorage.getItem("offlineSales") || "[]");
+    for (const s of q) {
+      await api("/api/sales", { method: "POST", body: JSON.stringify(s) });
+    }
     localStorage.removeItem("offlineSales");
-    showToast("Offline sales synchronized");
+    showToast(`${q.length} offline sale(s) synced`);
     setMsg("");
     load();
   }
 
-  function quickPay(amount) {
-    setPaid(String(amount));
-  }
+  const go = (path) => { location.href = path; };
+  const offlineCount = JSON.parse(localStorage.getItem("offlineSales") || "[]").length;
 
   return (
-    <div className="pos-shell">
-      <header className="pos-topbar">
-        <div className="pos-brand">
-          <div className="pos-logo">TP</div>
-          <div>
-            <div className="pos-brand-name">TIMBER<b>POINT</b></div>
-            <div className="pos-brand-sub">Smart POS · Timber Sales</div>
-          </div>
-        </div>
-
-        <div className="pos-location">
-          <select value={site} onChange={(e) => setSite(e.target.value)} className="pos-select-dark">
-            {sites.map((x) => (
-              <option key={x.id} value={x.id}>
-                {x.name} ({x.code || "SITE-" + x.id})
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="pos-utils">
-          {toast && <div className="pos-toast">🛒 {toast}</div>}
-          <select value={level} onChange={(e) => setLevel(e.target.value)} className="pos-select-dark">
-            <option value="retail">Retail Price</option>
-            <option value="contractor">Contractor</option>
-            <option value="bulk">Bulk</option>
-          </select>
-          <button className="pos-util-btn" onClick={sync} title="Sync offline sales">
-            🔄 Sync
-          </button>
-          <span className={"pos-online " + (navigator.onLine ? "on" : "off")}>
-            ● {navigator.onLine ? "Online" : "Offline"}
-          </span>
-        </div>
-      </header>
-
-      <div className="pos-body">
-        <aside className="pos-cart">
-          <div className="pos-till-banner">
-            <span className="till-dot"></span>
-            <span className="till-label">TILL #01</span>
-            <span className="till-meta">Lane {site || 1}</span>
-          </div>
-
-          <div className="pos-ticket-head">
-            <div className="ticket-title">
-              <span>🎟️ CURRENT TICKET</span>
-              <span className="item-badge">{cart.length} items</span>
+    <div className="tp-shell">
+      {/* ========== TOP NAV (replaces sidebar on this page) ========== */}
+      <header className="tp-header">
+        <div className="tp-header-inner">
+          <div className="tp-brand">
+            <div className="tp-logo">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 21h18" />
+                <path d="M5 21V9l7-6 7 6v12" />
+                <path d="M9 21v-6h6v6" />
+              </svg>
             </div>
-            <div className="ticket-actions">
-              <button className="ticket-btn hold" onClick={() => showToast("Ticket held")}>Hold</button>
-              <button className="ticket-btn clear" onClick={clearAll} disabled={!cart.length}>Clear All</button>
+            <div>
+              <div className="tp-brand-name">TIMBER<b>POINT</b></div>
+              <div className="tp-brand-sub">Smart Point of Sale</div>
             </div>
           </div>
 
-          <div className="pos-lines-head">
-            <span>ITEM DESCRIPTION</span>
-            <span className="col-qty">QTY</span>
-            <span className="col-tot">TOTAL</span>
-          </div>
+          <nav className="tp-modules" aria-label="Modules">
+            <button className="tp-mod on" title="Point of Sale">🧾 POS</button>
+            <button className="tp-mod" onClick={() => go("/dashboard")} title="Dashboard">📊 Dashboard</button>
+            <button className="tp-mod" onClick={() => go("/stock")} title="Stock">📦 Stock</button>
+            <button className="tp-mod" onClick={() => go("/sales")} title="Sales">💸 Sales</button>
+            <button className="tp-mod" onClick={() => go("/accounts/overview")} title="Accounts">💼 Accounts</button>
+            <button className="tp-mod" onClick={() => go("/customers")} title="Debtors">👥 Debtors</button>
+            <button className="tp-mod" onClick={() => go("/suppliers")} title="Creditors">🏭 Creditors</button>
+          </nav>
 
-          <div className="pos-lines">
-            {cart.length === 0 && (
-              <div className="empty-cart">
-                <div className="empty-icon">🛒</div>
-                <div>Scan or add a timber product to begin the sale.</div>
-              </div>
-            )}
-            {cart.map((x) => (
-              <div className="cart-line" key={x.product_id}>
-                <div className="cl-desc">
-                  <div className="cl-name">{x.name}</div>
-                  <div className="cl-sku">
-                    {x.sku} · ${Number(x.unit_price || 0).toFixed(2)} each
-                  </div>
-                </div>
-                <div className="cl-qty">
-                  <button className="qbtn" onClick={() => inc(x.product_id, -1)}>−</button>
-                  <span>{x.quantity}</span>
-                  <button className="qbtn" onClick={() => inc(x.product_id, 1)}>+</button>
-                </div>
-                <div className="cl-total">
-                  ${(x.quantity * x.unit_price).toFixed(2)}
-                </div>
-                <button className="cl-del" onClick={() => removeLine(x.product_id)} title="Remove line">🗑</button>
-              </div>
-            ))}
-          </div>
-
-          <div className="pos-totals">
-            <div className="tot-row"><span>Subtotal:</span><span>${subtotal.toFixed(2)}</span></div>
-            <div className="tot-row"><span>Tax (Est. 8%):</span><span>${tax.toFixed(2)}</span></div>
-            {currency !== "USD" && rate != 1 && (
-              <div className="tot-row"><span>Rate (×{rate}):</span><span>{currency}</span></div>
-            )}
-            <div className="tot-row grand">
-              <span>TOTAL DUE</span>
-              <span className="grand-val">{currency} {totalConverted.toFixed(2)}</span>
-            </div>
-            <div className="tot-row change">
-              <span>Change:</span>
-              <span>{currency} {Math.max(0, change).toFixed(2)}</span>
-            </div>
-          </div>
-
-          <div className="pay-methods">
-            <button
-              className={"pay-btn " + (method === "cash" ? "on" : "")}
-              onClick={() => setMethod("cash")}
-            >💵 Cash</button>
-            <button
-              className={"pay-btn " + (method === "card" ? "on" : "")}
-              onClick={() => setMethod("card")}
-            >💳 Card</button>
-            <button
-              className={"pay-btn " + (method === "mobile_money" ? "on" : "")}
-              onClick={() => setMethod("mobile_money")}
-            >📱 Mobile</button>
-            <button
-              className={"pay-btn " + (method === "credit" ? "on" : "")}
-              onClick={() => setMethod("credit")}
-            >📒 Credit</button>
-          </div>
-
-          <div className="quick-cash-row">
-            <button className="qc" onClick={() => setPaid(String(totalConverted.toFixed(2)))}>Exact</button>
-            <button className="qc" onClick={() => quickPay(5)}>$5</button>
-            <button className="qc" onClick={() => quickPay(10)}>$10</button>
-            <button className="qc" onClick={() => quickPay(20)}>$20</button>
-            <button className="qc" onClick={() => quickPay(50)}>$50</button>
-            <button className="qc" onClick={() => quickPay(100)}>$100</button>
-          </div>
-
-          <div className="field pay-amount">
-            <label>Amount tendered ({currency})</label>
-            <input
-              type="number"
-              value={paid}
-              onChange={(e) => setPaid(e.target.value)}
-              placeholder="0.00"
-            />
-          </div>
-
-          <div className="field margin-fix">
-            <label>Customer (optional)</label>
-            <select value={cust} onChange={(e) => setCust(e.target.value)}>
-              <option value="">— Walk-in customer —</option>
-              {customers.map((x) => (
+          <div className="tp-actions">
+            {toast && <div className="tp-toast">{toast}</div>}
+            <select value={level} onChange={(e) => setLevel(e.target.value)} className="tp-select">
+              <option value="retail">Retail Price</option>
+              <option value="contractor">Contractor Price</option>
+              <option value="bulk">Bulk Price</option>
+            </select>
+            <select value={site} onChange={(e) => setSite(e.target.value)} className="tp-select">
+              {sites.map((x) => (
                 <option key={x.id} value={x.id}>
-                  {x.name} · {x.code}
+                  📍 {x.name}
                 </option>
               ))}
             </select>
+            <button className="tp-chip tp-chip-sync" onClick={sync} title="Sync offline sales">
+              🔄 Sync
+              {offlineCount > 0 && <span className="tp-badge">{offlineCount}</span>}
+            </button>
+            <span className={"tp-pill tp-net " + (navigator.onLine ? "on" : "off")}>
+              <span className="tp-dot" /> {navigator.onLine ? "Online" : "Offline"}
+            </span>
+            <button className="tp-logout" onClick={() => { localStorage.clear(); location.href = "/login"; }}>Sign out</button>
+          </div>
+        </div>
+      </header>
+
+      <div className="tp-stage">
+        {/* ============= LEFT: TICKET / CART ============= */}
+        <aside className="tp-ticket">
+          <div className="tp-ticket-head">
+            <div className="tp-ticket-title">
+              <div className="tp-ticket-icon">🧾</div>
+              <div>
+                <h2>Current Ticket</h2>
+                <p>{cart.length} {cart.length === 1 ? "item" : "items"} in basket</p>
+              </div>
+              {cart.length > 0 && (
+                <span className="tp-count-pill">{cart.length}</span>
+              )}
+            </div>
+            <div className="tp-ticket-actions">
+              <button className="tp-tbtn hold" onClick={() => showToast("Ticket held")} disabled={!cart.length}>Hold</button>
+              <button className="tp-tbtn clear" onClick={clearAll} disabled={!cart.length}>Clear All</button>
+            </div>
           </div>
 
-          <div className="pos-meta-row">
-            <select
-              value={currency}
-              onChange={(e) => setCurrency(e.target.value)}
-            >
-              <option>USD</option>
-              <option>ZiG</option>
-              <option>ZAR</option>
-            </select>
-            <input
-              type="number"
-              step="0.0001"
-              value={rate}
-              onChange={(e) => setRate(e.target.value)}
-              title="Exchange rate"
-              placeholder="Rate"
-            />
+          <div className="tp-cart-head">
+            <span className="col-item">Product</span>
+            <span className="col-qty">Qty</span>
+            <span className="col-tot">Total</span>
+            <span className="col-act" />
+          </div>
+
+          <div className="tp-cart-lines">
+            {cart.length === 0 && (
+              <div className="tp-empty">
+                <div className="tp-empty-art">
+                  <svg viewBox="0 0 120 120" width="100" height="100" fill="none">
+                    <defs>
+                      <linearGradient id="g1" x1="0" x2="1" y1="0" y2="1">
+                        <stop offset="0%" stopColor="#f1bc38" stopOpacity=".55" />
+                        <stop offset="100%" stopColor="#1f7042" stopOpacity=".35" />
+                      </linearGradient>
+                    </defs>
+                    <circle cx="60" cy="60" r="52" fill="url(#g1)" />
+                    <path d="M40 52h44l-6 36H46z" stroke="#fff" strokeWidth="3" strokeLinejoin="round" opacity=".85" />
+                    <circle cx="49" cy="96" r="5" fill="#fff" opacity=".85" />
+                    <circle cx="83" cy="96" r="5" fill="#fff" opacity=".85" />
+                  </svg>
+                </div>
+                <h3>Your basket is empty</h3>
+                <p>Scan a barcode or tap any timber product below to add it to the ticket.</p>
+              </div>
+            )}
+
+            {cart.map((x) => {
+              const line = x.quantity * x.unit_price;
+              return (
+                <div className="tp-line" key={x.product_id}>
+                  <div className="tp-line-ico">🪵</div>
+                  <div className="tp-line-info">
+                    <div className="tp-line-name">{x.name}</div>
+                    <div className="tp-line-meta">
+                      {x.sku} · ${Number(x.unit_price).toFixed(2)} each
+                    </div>
+                  </div>
+                  <div className="tp-qty">
+                    <button className="tp-qb" onClick={() => setQty(x.product_id, x.quantity - 1)}>−</button>
+                    <input
+                      type="number"
+                      min="0"
+                      value={x.quantity}
+                      onChange={(e) => setQty(x.product_id, e.target.value)}
+                    />
+                    <button className="tp-qb plus" onClick={() => setQty(x.product_id, x.quantity + 1)}>+</button>
+                  </div>
+                  <div className="tp-line-total">${line.toFixed(2)}</div>
+                  <button className="tp-line-del" title="Remove line" onClick={() => removeLine(x.product_id)}>✕</button>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="tp-totals">
+            <div className="tp-tot-row"><span>Subtotal</span><span>${subtotal.toFixed(2)}</span></div>
+            <div className="tp-tot-row muted"><span>VAT / Tax (est. 8%)</span><span>${tax.toFixed(2)}</span></div>
+            {currency !== "USD" && Number(rate) !== 1 && (
+              <div className="tp-tot-row muted"><span>Rate (× {rate})</span><span>{currency}</span></div>
+            )}
+            <div className="tp-tot-row grand">
+              <span>Total due</span>
+              <span className="tp-grand">{currency} {totalConverted.toFixed(2)}</span>
+            </div>
+            <div className="tp-tot-row">
+              <span>Change</span>
+              <span className={change < 0 ? "neg" : "pos"}>
+                {currency} {Math.max(0, change).toFixed(2)}
+              </span>
+            </div>
+          </div>
+
+          <div className="tp-pay-title">Payment method</div>
+          <div className="tp-pay-methods">
+            {[
+              { k: "cash", label: "Cash", icon: "💵" },
+              { k: "card", label: "Card", icon: "💳" },
+              { k: "mobile_money", label: "Mobile", icon: "📱" },
+              { k: "credit", label: "Credit", icon: "📒" },
+            ].map((m) => (
+              <button
+                key={m.k}
+                className={"tp-pay-btn " + (method === m.k ? "on" : "")}
+                onClick={() => setMethod(m.k)}
+              >
+                <span className="tp-pay-ico">{m.icon}</span>
+                {m.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="tp-quick">
+            <button className="tp-qc exact" onClick={() => setPaid(String(totalConverted.toFixed(2)))}>Exact Cash</button>
+            <button className="tp-qc" onClick={() => setPaid("5")}>$5</button>
+            <button className="tp-qc" onClick={() => setPaid("10")}>$10</button>
+            <button className="tp-qc" onClick={() => setPaid("20")}>$20</button>
+            <button className="tp-qc" onClick={() => setPaid("50")}>$50</button>
+            <button className="tp-qc" onClick={() => setPaid("100")}>$100</button>
+          </div>
+
+          <div className="tp-field">
+            <label>Amount tendered ({currency})</label>
+            <div className="tp-input-wrap">
+              <span className="tp-input-prefix">{currency === "USD" ? "$" : ""}</span>
+              <input
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                value={paid}
+                onChange={(e) => setPaid(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="tp-field tp-field-half">
+            <div>
+              <label>Customer <span className="opt">(optional)</span></label>
+              <select value={cust} onChange={(e) => setCust(e.target.value)}>
+                <option value="">— Walk-in customer —</option>
+                {customers.map((x) => (
+                  <option key={x.id} value={x.id}>{x.name} · {x.code}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label>Currency &amp; rate</label>
+              <div className="tp-cur">
+                <select value={currency} onChange={(e) => setCurrency(e.target.value)}>
+                  <option>USD</option>
+                  <option>ZiG</option>
+                  <option>ZAR</option>
+                  <option>BWP</option>
+                </select>
+                <input
+                  type="number"
+                  step="0.0001"
+                  value={rate}
+                  onChange={(e) => setRate(e.target.value)}
+                  title="Exchange rate"
+                />
+              </div>
+            </div>
           </div>
 
           <button
-            className="complete-btn"
-            disabled={!cart.length}
+            className="tp-complete"
             onClick={complete}
+            disabled={!cart.length}
           >
-            ✅ Complete Sale &amp; Print Receipt
+            <span className="tp-complete-ico">🖨️</span>
+            <div>
+              <div className="tp-complete-title">Complete Sale &amp; Print Receipt</div>
+              <div className="tp-complete-sub">
+                Tender: {currency} {(paidNum || 0).toFixed(2)} · Due: {currency} {totalConverted.toFixed(2)}
+              </div>
+            </div>
           </button>
 
-          {msg && <div className="pos-msg">{msg}</div>}
+          {msg && <div className="tp-msg">{msg}</div>}
 
           {last && (
-            <div className="receipt">
+            <div className="tp-receipt">
               <hr />
-              <h3>TIMBERPOINT</h3>
-              <div>{last.number}</div>
+              <h3>🧾 TIMBERPOINT RECEIPT</h3>
+              <div className="tp-rec-no">{last.number}</div>
               {last.lines && last.lines.map((x, i) => (
-                <div key={i}>
-                  {x.name} x{x.quantity} {Number(x.total || 0).toFixed(2)}
+                <div key={i} className="tp-rec-line">
+                  <span>{x.name} × {x.quantity}</span>
+                  <span>${Number(x.total || 0).toFixed(2)}</span>
                 </div>
               ))}
-              <b>
-                Total {last.currency || "USD"} {Number(last.total || 0).toFixed(2)}
-              </b>
-              <p>Reliable timber · Lasting strength</p>
-              <button className="btn alt" onClick={() => print()}>
-                Print receipt
-              </button>
+              <div className="tp-rec-total">
+                <span>Total</span>
+                <span>{last.currency || "USD"} ${Number(last.total || 0).toFixed(2)}</span>
+              </div>
+              <p className="tp-rec-motto">Reliable timber · Lasting strength</p>
+              <button className="tp-btn-print" onClick={() => window.print()}>🖨️ Print receipt</button>
             </div>
           )}
         </aside>
 
-        <section className="pos-products">
-          <div className="pos-search-row">
-            <div className="pos-search">
-              <span className="search-ico">🔍</span>
+        {/* ============= RIGHT: PRODUCTS ============= */}
+        <section className="tp-shop">
+          <div className="tp-hero">
+            <div className="tp-hero-text">
+              <div className="tp-hero-badge">🌲 Timber Shop</div>
+              <h1>Build with the best timber in town</h1>
+              <p>
+                Punch in a barcode, SKU or product name — or tap a category chip
+                to browse roofing, structural timber, hardware and more.
+              </p>
+            </div>
+            <div className="tp-hero-stats">
+              <div className="tp-stat">
+                <div className="tp-stat-num">{products.length}</div>
+                <div className="tp-stat-lab">Products</div>
+              </div>
+              <div className="tp-stat">
+                <div className="tp-stat-num">{categories.length - 1}</div>
+                <div className="tp-stat-lab">Categories</div>
+              </div>
+              <div className="tp-stat">
+                <div className="tp-stat-num">{sites.length}</div>
+                <div className="tp-stat-lab">Sites</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="tp-searchbar">
+            <div className="tp-search">
+              <span className="tp-s-ico">🔍</span>
               <input
                 autoFocus
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Punch SKU / Barcode / Item name (e.g. ROOF-001)..."
+                placeholder="Punch SKU / Barcode / Item name (e.g. 3838, NAIL, 0380383M)…"
               />
+              {search && (
+                <button className="tp-s-clear" onClick={() => setSearch("")} title="Clear search">✕</button>
+              )}
             </div>
-            <button className="punch-btn" title="Punch / Enter">Punch ↵</button>
+            <button className="tp-punch" onClick={() => {
+              const hit = shown[0];
+              if (hit) add(hit);
+              else showToast("No matching product");
+            }}>
+              Punch ↵
+            </button>
           </div>
 
-          <div className="pos-cats">
-            {categories.map((c) => (
-              <button
-                key={c}
-                className={"cat-chip " + (category === c ? "on" : "")}
-                onClick={() => setCategory(c)}
-              >
-                {c}
-              </button>
-            ))}
+          <div className="tp-cats">
+            {categories.map((c) => {
+              const count = c === "All" ? products.length : products.filter(p => p.category === c).length;
+              return (
+                <button
+                  key={c}
+                  className={"tp-cat " + (category === c ? "on" : "")}
+                  onClick={() => setCategory(c)}
+                >
+                  {c} <span className="tp-cat-n">{count}</span>
+                </button>
+              );
+            })}
           </div>
 
-          <div className="pos-grid">
+          <div className="tp-grid">
             {shown.length === 0 && (
-              <div className="empty-prod">
-                No products match your filter.
+              <div className="tp-grid-empty">
+                <div className="tp-grid-empty-ico">🔍</div>
+                <h3>No products found</h3>
+                <p>Try a different search term or category.</p>
               </div>
             )}
-            {shown.map((p) => (
-              <div key={p.id} className="prod-card">
-                <div className="prod-head">
-                  <span className="prod-sku">{p.sku}</span>
-                  <span className="prod-stock">{Math.round(Number(p.quantity||0))} left</span>
-                </div>
-                <div className="prod-name">{p.name}</div>
-                <div className="prod-dims">{p.dimensions || p.category || "Timber product"}</div>
-                <div className="prod-foot">
-                  <span className="prod-price">${Number(p[level] || 0).toFixed(2)}</span>
-                  <button className="prod-add" onClick={() => add(p)} title="Add to ticket">+</button>
-                </div>
-              </div>
-            ))}
+            {shown.map((p) => {
+              const stockNum = Number(p.quantity || 0);
+              const low = stockNum <= Number(p.reorder || 5);
+              const price = Number(p[level] || 0);
+              return (
+                <button
+                  key={p.id}
+                  className="tp-prod"
+                  onClick={() => add(p)}
+                  type="button"
+                >
+                  <div className="tp-prod-top">
+                    <span className="tp-prod-sku">{p.sku}</span>
+                    <span className={"tp-prod-stk " + (low ? "low" : "")}>
+                      {low ? "⚠ " : ""}{Math.round(stockNum)} left
+                    </span>
+                  </div>
+                  <div className="tp-prod-cat">{p.category || "Timber"}</div>
+                  <div className="tp-prod-name">{p.name}</div>
+                  <div className="tp-prod-dim">{p.dimensions || "Premium grade timber"}</div>
+                  <div className="tp-prod-bot">
+                    <div className="tp-prod-price">
+                      <span className="tp-price-sym">$</span>
+                      <span className="tp-price-num">{price.toFixed(2)}</span>
+                    </div>
+                    <div className="tp-prod-add" title="Add to ticket">
+                      <span>+</span>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </section>
       </div>
@@ -1007,6 +1111,18 @@ createRoot(document.getElementById("root")).render(
   <BrowserRouter>
     <Routes>
       <Route path="/login" element={<Login />} />
+
+      {/* POS = FULL-SCREEN, no sidebar. The POS panel has its own top bar + mini nav */}
+      <Route
+        path="/"
+        element={
+          <G>
+            <POS />
+          </G>
+        }
+      />
+
+      {/* All other pages share the sidebar + main Layout */}
       <Route
         element={
           <G>
@@ -1014,7 +1130,6 @@ createRoot(document.getElementById("root")).render(
           </G>
         }
       >
-        <Route path="/" element={<POS />} />
         <Route path="/dashboard" element={<AccountsOverview />} />
         <Route path="/stock" element={<TablePage title="Stock" path="/api/products" />} />
         <Route path="/sales" element={<TablePage title="Sales" path="/api/sales" />} />
