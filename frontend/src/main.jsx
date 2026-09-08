@@ -1105,7 +1105,7 @@ function AccountsLayout() {
   );
 }
 
-let G = ({ children }) => (tk() ? children : <Navigate to="/login" />);
+let G = ({ children }) => children;
 
 createRoot(document.getElementById("root")).render(
   <BrowserRouter>
