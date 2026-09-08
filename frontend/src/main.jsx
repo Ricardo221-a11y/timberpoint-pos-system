@@ -127,11 +127,13 @@ function POS() {
     [currency, setCurrency] = useState("USD"),
     [rate, setRate] = useState(1),
     [search, setSearch] = useState(""),
+    [category, setCategory] = useState("All"),
     [cart, setCart] = useState([]),
     [paid, setPaid] = useState(0),
     [method, setMethod] = useState("cash"),
     [last, setLast] = useState(null),
-    [msg, setMsg] = useState("");
+    [msg, setMsg] = useState(""),
+    [toast, setToast] = useState("");
 
   let load = () =>
     Promise.all([
@@ -149,17 +151,35 @@ function POS() {
     load();
   }, [site]);
 
-  let shown = products.filter((x) =>
-    (x.name + x.sku + x.barcode)
-      .toLowerCase()
-      .includes(search.toLowerCase())
-  );
+  const categories = [
+    "All",
+    ...Array.from(new Set(products.map((p) => p.category).filter(Boolean))),
+  ];
 
-  let total = cart.reduce((a, x) => a + x.quantity * x.unit_price, 0);
+  let shown = products.filter((x) => {
+    const matchesSearch = (x.name + " " + x.sku + " " + x.barcode)
+      .toLowerCase()
+      .includes(search.toLowerCase());
+    const matchesCat = category === "All" || x.category === category;
+    return matchesSearch && matchesCat;
+  });
+
+  let subtotal = cart.reduce((a, x) => a + x.quantity * x.unit_price, 0);
+  let tax = subtotal * 0.08;
+  let total = subtotal + tax;
+  let totalConverted = total * rate;
+  let change = Number(paid) - totalConverted;
+
+  function showToast(text) {
+    setToast(text);
+    setTimeout(() => setToast(""), 2200);
+  }
 
   function add(p) {
     setCart((c) => {
       let z = c.find((x) => x.product_id === p.id);
+      const lineTotal = (p[level] || 0).toFixed(2);
+      showToast(`Added: 1x ${p.name} ($${lineTotal})`);
       return z
         ? c.map((x) =>
             x.product_id === p.id
@@ -177,6 +197,27 @@ function POS() {
             },
           ];
     });
+  }
+
+  function inc(pid, delta) {
+    setCart((c) =>
+      c
+        .map((x) =>
+          x.product_id === pid ? { ...x, quantity: Math.max(0, x.quantity + delta) } : x
+        )
+        .filter((x) => x.quantity > 0)
+    );
+  }
+
+  function removeLine(pid) {
+    setCart((c) => c.filter((y) => y.product_id !== pid));
+  }
+
+  function clearAll() {
+    if (cart.length && window.confirm("Clear the current ticket?")) {
+      setCart([]);
+      setPaid(0);
+    }
   }
 
   async function complete() {
@@ -227,174 +268,212 @@ function POS() {
         body: JSON.stringify(s),
       });
     localStorage.removeItem("offlineSales");
-    setMsg("Offline sales synchronized");
+    showToast("Offline sales synchronized");
+    setMsg("");
     load();
   }
 
+  function quickPay(amount) {
+    setPaid(String(amount));
+  }
+
   return (
-    <>
-      <div className="top">
-        <div>
-          <h1>Timber Point of Sale</h1>
-          <div>Scan barcode or select timber product</div>
+    <div className="pos-shell">
+      <header className="pos-topbar">
+        <div className="pos-brand">
+          <div className="pos-logo">TP</div>
+          <div>
+            <div className="pos-brand-name">TIMBER<b>POINT</b></div>
+            <div className="pos-brand-sub">Smart POS · Timber Sales</div>
+          </div>
         </div>
-        <div className="actions">
-          <button className="btn alt" onClick={sync}>
-            Sync offline sales
+
+        <div className="pos-location">
+          <select value={site} onChange={(e) => setSite(e.target.value)} className="pos-select-dark">
+            {sites.map((x) => (
+              <option key={x.id} value={x.id}>
+                {x.name} ({x.code || "SITE-" + x.id})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="pos-utils">
+          {toast && <div className="pos-toast">🛒 {toast}</div>}
+          <select value={level} onChange={(e) => setLevel(e.target.value)} className="pos-select-dark">
+            <option value="retail">Retail Price</option>
+            <option value="contractor">Contractor</option>
+            <option value="bulk">Bulk</option>
+          </select>
+          <button className="pos-util-btn" onClick={sync} title="Sync offline sales">
+            🔄 Sync
           </button>
+          <span className={"pos-online " + (navigator.onLine ? "on" : "off")}>
+            ● {navigator.onLine ? "Online" : "Offline"}
+          </span>
         </div>
-      </div>
+      </header>
 
-      {!navigator.onLine && (
-        <div className="offline">
-          Offline mode: completed sales will be queued.
-        </div>
-      )}
+      <div className="pos-body">
+        <aside className="pos-cart">
+          <div className="pos-till-banner">
+            <span className="till-dot"></span>
+            <span className="till-label">TILL #01</span>
+            <span className="till-meta">Lane {site || 1}</span>
+          </div>
 
-      {msg && <div className="card">{msg}</div>}
-
-      <div className="pos">
-        <div>
-          <div className="card">
-            <div className="actions">
-              <input
-                style={{ flex: 1, padding: 10 }}
-                autoFocus
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Scan barcode, SKU or search timber"
-              />
-              <select value={site} onChange={(e) => setSite(e.target.value)}>
-                {sites.map((x) => (
-                  <option key={x.id} value={x.id}>
-                    {x.name}
-                  </option>
-                ))}
-              </select>
-              <select value={level} onChange={(e) => setLevel(e.target.value)}>
-                <option value="retail">Retail</option>
-                <option value="contractor">Contractor</option>
-                <option value="bulk">Bulk</option>
-              </select>
+          <div className="pos-ticket-head">
+            <div className="ticket-title">
+              <span>🎟️ CURRENT TICKET</span>
+              <span className="item-badge">{cart.length} items</span>
+            </div>
+            <div className="ticket-actions">
+              <button className="ticket-btn hold" onClick={() => showToast("Ticket held")}>Hold</button>
+              <button className="ticket-btn clear" onClick={clearAll} disabled={!cart.length}>Clear All</button>
             </div>
           </div>
 
-          <div className="products">
-            {shown.map((p) => (
-              <button
-                key={p.id}
-                className="product"
-                onClick={() => add(p)}
-              >
-                <strong>{p.name}</strong>
-                <small>
-                  {p.dimensions} · Stock {p.quantity}
-                </small>
-                <h3>${p[level]}</h3>
-              </button>
+          <div className="pos-lines-head">
+            <span>ITEM DESCRIPTION</span>
+            <span className="col-qty">QTY</span>
+            <span className="col-tot">TOTAL</span>
+          </div>
+
+          <div className="pos-lines">
+            {cart.length === 0 && (
+              <div className="empty-cart">
+                <div className="empty-icon">🛒</div>
+                <div>Scan or add a timber product to begin the sale.</div>
+              </div>
+            )}
+            {cart.map((x) => (
+              <div className="cart-line" key={x.product_id}>
+                <div className="cl-desc">
+                  <div className="cl-name">{x.name}</div>
+                  <div className="cl-sku">
+                    {x.sku} · ${Number(x.unit_price || 0).toFixed(2)} each
+                  </div>
+                </div>
+                <div className="cl-qty">
+                  <button className="qbtn" onClick={() => inc(x.product_id, -1)}>−</button>
+                  <span>{x.quantity}</span>
+                  <button className="qbtn" onClick={() => inc(x.product_id, 1)}>+</button>
+                </div>
+                <div className="cl-total">
+                  ${(x.quantity * x.unit_price).toFixed(2)}
+                </div>
+                <button className="cl-del" onClick={() => removeLine(x.product_id)} title="Remove line">🗑</button>
+              </div>
             ))}
           </div>
-        </div>
 
-        <div className="card">
-          <h2>Sale</h2>
-
-          {cart.map((x) => (
-            <div className="cartline" key={x.product_id}>
-              <span>{x.name}</span>
-              <input
-                type="number"
-                min="1"
-                value={x.quantity}
-                onChange={(e) =>
-                  setCart((c) =>
-                    c.map((y) =>
-                      y.product_id === x.product_id
-                        ? { ...y, quantity: Number(e.target.value) }
-                        : y
-                    )
-                  )
-                }
-              />
-              <span>${(x.quantity * x.unit_price).toFixed(2)}</span>
-              <button
-                onClick={() =>
-                  setCart((c) => c.filter((y) => y.product_id !== x.product_id))
-                }
-              >
-                ×
-              </button>
+          <div className="pos-totals">
+            <div className="tot-row"><span>Subtotal:</span><span>${subtotal.toFixed(2)}</span></div>
+            <div className="tot-row"><span>Tax (Est. 8%):</span><span>${tax.toFixed(2)}</span></div>
+            {currency !== "USD" && rate != 1 && (
+              <div className="tot-row"><span>Rate (×{rate}):</span><span>{currency}</span></div>
+            )}
+            <div className="tot-row grand">
+              <span>TOTAL DUE</span>
+              <span className="grand-val">{currency} {totalConverted.toFixed(2)}</span>
             </div>
-          ))}
+            <div className="tot-row change">
+              <span>Change:</span>
+              <span>{currency} {Math.max(0, change).toFixed(2)}</span>
+            </div>
+          </div>
 
-          <h2>
-            Total: {currency} {(total * rate).toFixed(2)}
-          </h2>
+          <div className="pay-methods">
+            <button
+              className={"pay-btn " + (method === "cash" ? "on" : "")}
+              onClick={() => setMethod("cash")}
+            >💵 Cash</button>
+            <button
+              className={"pay-btn " + (method === "card" ? "on" : "")}
+              onClick={() => setMethod("card")}
+            >💳 Card</button>
+            <button
+              className={"pay-btn " + (method === "mobile_money" ? "on" : "")}
+              onClick={() => setMethod("mobile_money")}
+            >📱 Mobile</button>
+            <button
+              className={"pay-btn " + (method === "credit" ? "on" : "")}
+              onClick={() => setMethod("credit")}
+            >📒 Credit</button>
+          </div>
 
-          <div className="field">
-            <label>Customer</label>
+          <div className="quick-cash-row">
+            <button className="qc" onClick={() => setPaid(String(totalConverted.toFixed(2)))}>Exact</button>
+            <button className="qc" onClick={() => quickPay(5)}>$5</button>
+            <button className="qc" onClick={() => quickPay(10)}>$10</button>
+            <button className="qc" onClick={() => quickPay(20)}>$20</button>
+            <button className="qc" onClick={() => quickPay(50)}>$50</button>
+            <button className="qc" onClick={() => quickPay(100)}>$100</button>
+          </div>
+
+          <div className="field pay-amount">
+            <label>Amount tendered ({currency})</label>
+            <input
+              type="number"
+              value={paid}
+              onChange={(e) => setPaid(e.target.value)}
+              placeholder="0.00"
+            />
+          </div>
+
+          <div className="field margin-fix">
+            <label>Customer (optional)</label>
             <select value={cust} onChange={(e) => setCust(e.target.value)}>
-              <option value="">Walk-in</option>
+              <option value="">— Walk-in customer —</option>
               {customers.map((x) => (
                 <option key={x.id} value={x.id}>
-                  {x.name}
+                  {x.name} · {x.code}
                 </option>
               ))}
             </select>
           </div>
 
-          <div className="actions">
+          <div className="pos-meta-row">
             <select
               value={currency}
               onChange={(e) => setCurrency(e.target.value)}
             >
               <option>USD</option>
               <option>ZiG</option>
+              <option>ZAR</option>
             </select>
             <input
               type="number"
+              step="0.0001"
               value={rate}
               onChange={(e) => setRate(e.target.value)}
               title="Exchange rate"
-            />
-            <select value={method} onChange={(e) => setMethod(e.target.value)}>
-              <option>cash</option>
-              <option>card</option>
-              <option>mobile_money</option>
-              <option>credit</option>
-            </select>
-          </div>
-
-          <div className="field">
-            <label>Amount paid</label>
-            <input
-              type="number"
-              value={paid}
-              onChange={(e) => setPaid(e.target.value)}
+              placeholder="Rate"
             />
           </div>
 
           <button
-            className="btn"
+            className="complete-btn"
             disabled={!cart.length}
-            style={{ width: "100%" }}
             onClick={complete}
           >
-            Charge {currency} {(total * rate).toFixed(2)}
+            ✅ Complete Sale &amp; Print Receipt
           </button>
+
+          {msg && <div className="pos-msg">{msg}</div>}
 
           {last && (
             <div className="receipt">
               <hr />
               <h3>TIMBERPOINT</h3>
               <div>{last.number}</div>
-              {last.lines.map((x, i) => (
+              {last.lines && last.lines.map((x, i) => (
                 <div key={i}>
-                  {x.name} x{x.quantity} {x.total.toFixed(2)}
+                  {x.name} x{x.quantity} {Number(x.total || 0).toFixed(2)}
                 </div>
               ))}
               <b>
-                Total {last.currency} {last.total.toFixed(2)}
+                Total {last.currency || "USD"} {Number(last.total || 0).toFixed(2)}
               </b>
               <p>Reliable timber · Lasting strength</p>
               <button className="btn alt" onClick={() => print()}>
@@ -402,9 +481,58 @@ function POS() {
               </button>
             </div>
           )}
-        </div>
+        </aside>
+
+        <section className="pos-products">
+          <div className="pos-search-row">
+            <div className="pos-search">
+              <span className="search-ico">🔍</span>
+              <input
+                autoFocus
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Punch SKU / Barcode / Item name (e.g. ROOF-001)..."
+              />
+            </div>
+            <button className="punch-btn" title="Punch / Enter">Punch ↵</button>
+          </div>
+
+          <div className="pos-cats">
+            {categories.map((c) => (
+              <button
+                key={c}
+                className={"cat-chip " + (category === c ? "on" : "")}
+                onClick={() => setCategory(c)}
+              >
+                {c}
+              </button>
+            ))}
+          </div>
+
+          <div className="pos-grid">
+            {shown.length === 0 && (
+              <div className="empty-prod">
+                No products match your filter.
+              </div>
+            )}
+            {shown.map((p) => (
+              <div key={p.id} className="prod-card">
+                <div className="prod-head">
+                  <span className="prod-sku">{p.sku}</span>
+                  <span className="prod-stock">{Math.round(Number(p.quantity||0))} left</span>
+                </div>
+                <div className="prod-name">{p.name}</div>
+                <div className="prod-dims">{p.dimensions || p.category || "Timber product"}</div>
+                <div className="prod-foot">
+                  <span className="prod-price">${Number(p[level] || 0).toFixed(2)}</span>
+                  <button className="prod-add" onClick={() => add(p)} title="Add to ticket">+</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
       </div>
-    </>
+    </div>
   );
 }
 
