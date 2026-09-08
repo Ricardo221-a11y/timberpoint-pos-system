@@ -21,6 +21,23 @@ class ProductIn(BaseModel):sku:str;barcode:str;name:str;category:str;dimensions:
 class StockIn(BaseModel):product_id:int;site_id:int;quantity:float;reference:str='STOCK-IN'
 class SaleIn(BaseModel):number:str;site_id:int;customer_id:int|None=None;currency:str='USD';exchange_rate:float=1;price_level:str='retail';lines:list[dict];discount:float=0;payment_method:str='cash';amount_paid:float=0
 
+# Expense-related Pydantic models
+class ExpenseCategoryIn(BaseModel):
+    name: str
+    kind: str = 'indirect'  # 'direct' or 'indirect'
+    description: str = ''
+
+class ExpenseIn(BaseModel):
+    date: datetime | None = None
+    category_id: int
+    site_id: int | None = None
+    supplier_id: int | None = None
+    amount: float
+    currency: str = 'USD'
+    exchange_rate: float = 1.0
+    reference: str = ''
+    notes: str = ''
+
 def make_token(u):return jwt.encode({'sub':str(u.id),'role':u.role},s.jwt_secret,algorithm='HS256')
 def current(t=Depends(oauth),x:Session=Depends(db)):
  try:i=int(jwt.decode(t,s.jwt_secret,algorithms=['HS256'])['sub'])
@@ -37,13 +54,31 @@ def stock(x,pid,sid):
  z=x.scalar(select(Stock).where(Stock.product_id==pid,Stock.site_id==sid))
  if not z:z=Stock(product_id=pid,site_id=sid);x.add(z);x.flush()
  return z
+
 def seed(x):
  if x.scalar(select(Site.id)):return
  st=Site(code='HAR-01',name='Harare Timber Shop');x.add(st);x.flush()
- ps=[('0380383M','600000001','Roofing timber 38 x 38 x 3m','Roofing Timber','38 x 38 x 3000mm',4,6.5,6,5.5,100),('07603848','600000002','Structural timber 76 x 38 x 4.8m','Structural Timber','76 x 38 x 4800mm',10,15,14,13,60),('1140386M','600000003','Wall plate 114 x 38 x 6m','Wall Plates','114 x 38 x 6000mm',18,26,24,22,40),('1520386M','600000004','Purlin 152 x 38 x 6m','Purlins','152 x 38 x 6000mm',25,36,34,31,35),('2280386M','600000005','Brandering 228 x 38 x 6m','Brandering','228 x 38 x 6000mm',37,52,49,45,25),('NAILS5KG','600000006','100mm framing nails 5kg','Accessories','5kg box',13,20,18,17,15)]
+ ps=[('0380383M','600000001','Roofing timber 38 x 38 x 3m','Roofing Timber','38 x 38 x 3000mm',4,6.5,6,5.5,100),('07603848','600000002','Structural timber 76 x 38 x 4.8m','Structural Timber','76 x[...]
  for a,b,c,d,e,f,g,h,i,j in ps:
-  p=Product(sku=a,barcode=b,name=c,category=d,dimensions=e,cost=f,retail=g,contractor=h,bulk=i,reorder=j,unit='box' if a=='NAILS5KG' else 'length');x.add(p);x.flush();x.add(Stock(product_id=p.id,site_id=st.id,quantity=200))
- x.add(Customer(code='WALK-IN',name='Walk-in Customer',kind='retail'));x.add(Customer(code='CONT-001',name='Demo Contractor',kind='contractor',credit_limit=5000));x.add(Supplier(code='SUP-001',name='Eastern Timber Supplier'));x.commit()
+  p=Product(sku=a,barcode=b,name=c,category=d,dimensions=e,cost=f,retail=g,contractor=h,bulk=i,reorder=j,unit='box' if a=='NAILS5KG' else 'length');x.add(p);x.flush();x.add(Stock(product_id=p.id,s[...]
+ x.add(Customer(code='WALK-IN',name='Walk-in Customer',kind='retail'));
+ x.add(Customer(code='CONT-001',name='Demo Contractor',kind='contractor',credit_limit=5000));
+ x.add(Supplier(code='SUP-001',name='Demo Supplier'))
+
+ # seed some expense categories
+ if not x.scalar(select(ExpenseCategory.id)):
+     cats = [
+         ('Rent', 'indirect'),
+         ('Utilities', 'indirect'),
+         ('Wages', 'indirect'),
+         ('Freight', 'direct'),
+         ('Insurance', 'indirect'),
+         ('Repairs', 'indirect'),
+     ]
+     for n,k in cats:
+         x.add(ExpenseCategory(name=n, kind=k))
+ x.commit()
+
 @asynccontextmanager
 async def life(app):
  Base.metadata.create_all(engine)
@@ -66,12 +101,12 @@ def sites(x:Session=Depends(db),u=Depends(current)):return x.scalars(select(Site
 @app.get('/api/products')
 def products(site_id:int|None=None,x:Session=Depends(db),u=Depends(current)):
  ps=x.scalars(select(Product).where(Product.active==True).order_by(Product.category,Product.name)).all();out=[]
- for p in ps:q=x.scalar(select(func.sum(Stock.quantity)).where(Stock.product_id==p.id,*(([Stock.site_id==site_id]) if site_id else []))) or 0;out.append({**{c.name:getattr(p,c.name) for c in Product.__table__.columns},'quantity':q,'low_stock':q<=p.reorder})
+ for p in ps:q=x.scalar(select(func.sum(Stock.quantity)).where(Stock.product_id==p.id,*(([Stock.site_id==site_id]) if site_id else []))) or 0;out.append({**{c.name:getattr(p,c.name) for c in Produ[...]
  return out
 @app.post('/api/products')
 def product(v:ProductIn,x:Session=Depends(db),u=Depends(role('director','supervisor'))):z=Product(**v.model_dump());x.add(z);x.commit();return z
 @app.post('/api/stock')
-def addstock(v:StockIn,x:Session=Depends(db),u=Depends(role('director','supervisor'))):z=stock(x,v.product_id,v.site_id);z.quantity+=v.quantity;x.add(StockMove(product_id=v.product_id,site_id=v.site_id,quantity=v.quantity,kind='stock_in',reference=v.reference));x.commit();return z
+def addstock(v:StockIn,x:Session=Depends(db),u=Depends(role('director','supervisor'))):z=stock(x,v.product_id,v.site_id);z.quantity+=v.quantity;x.add(StockMove(product_id=v.product_id,site_id=v.site_id,quantity=v.quantity,reference=v.reference));x.commit();return z
 @app.get('/api/customers')
 def customers(x:Session=Depends(db),u=Depends(current)):return x.scalars(select(Customer).order_by(Customer.name)).all()
 @app.post('/api/customers')
@@ -85,6 +120,62 @@ def custpay(v:PartyPayment,x:Session=Depends(db),u=Depends(current)):
 def suppliers(x:Session=Depends(db),u=Depends(current)):return x.scalars(select(Supplier).order_by(Supplier.name)).all()
 @app.post('/api/suppliers')
 def supplier(v:SupplierIn,x:Session=Depends(db),u=Depends(current)):z=Supplier(**v.model_dump());x.add(z);x.commit();return z
+
+# Expense category endpoints
+@app.get('/api/expense-categories')
+def list_expense_categories(x: Session = Depends(db), u = Depends(current)):
+    return x.scalars(select(ExpenseCategory).order_by(ExpenseCategory.name)).all()
+
+@app.post('/api/expense-categories')
+def create_expense_category(v: ExpenseCategoryIn, x: Session = Depends(db), u = Depends(role('director','supervisor'))):
+    if x.scalar(select(ExpenseCategory).where(ExpenseCategory.name == v.name)):
+        raise HTTPException(409, 'Category exists')
+    z = ExpenseCategory(**v.model_dump())
+    x.add(z); x.commit(); return z
+
+# Expense endpoints
+@app.get('/api/expenses')
+def list_expenses(start: str | None = None, end: str | None = None, site_id: int | None = None, category_id: int | None = None, x: Session = Depends(db), u = Depends(current)):
+    q = select(Expense).order_by(Expense.date.desc()).limit(500)
+    if start: q = q.where(Expense.date >= start)
+    if end: q = q.where(Expense.date <= end)
+    if site_id: q = q.where(Expense.site_id == site_id)
+    if category_id: q = q.where(Expense.category_id == category_id)
+    return x.scalars(q).all()
+
+@app.post('/api/expenses')
+def create_expense(v: ExpenseIn, x: Session = Depends(db), u = Depends(current)):
+    cat = x.get(ExpenseCategory, v.category_id)
+    if not cat: raise HTTPException(404, 'Category not found')
+    exp = Expense(
+        date = v.date or datetime.utcnow(),
+        category_id = v.category_id,
+        site_id = v.site_id,
+        supplier_id = v.supplier_id,
+        amount = v.amount,
+        currency = v.currency,
+        exchange_rate = v.exchange_rate,
+        reference = v.reference,
+        notes = v.notes
+    )
+    x.add(exp); x.commit(); return exp
+
+@app.get('/api/reports/expenses-summary')
+def expense_summary(start: str | None = None, end: str | None = None, site_id: int | None = None, x: Session = Depends(db), u = Depends(current)):
+    # SQLite-friendly month grouping; for Postgres use to_char
+    q = select(func.strftime('%Y-%m', Expense.date).label('month'),
+               ExpenseCategory.kind,
+               ExpenseCategory.name.label('category'),
+               func.sum(Expense.amount).label('total')) \
+          .join(ExpenseCategory, Expense.category_id == ExpenseCategory.id) \
+          .group_by('month', ExpenseCategory.kind, ExpenseCategory.name) \
+          .order_by('month')
+    if start: q = q.where(Expense.date >= start)
+    if end: q = q.where(Expense.date <= end)
+    if site_id: q = q.where(Expense.site_id == site_id)
+    rows = x.execute(q).all()
+    return [{'month': r.month, 'kind': r.kind, 'category': r.category, 'total': r.total} for r in rows]
+
 @app.post('/api/supplier-transactions')
 def suptxn(v:SupplierTxn,x:Session=Depends(db),u=Depends(current)):
  sp=x.get(Supplier,v.supplier_id)
@@ -100,18 +191,23 @@ def sale(v:SaleIn,x:Session=Depends(db),u=Depends(current)):
  for line in v.lines:
   p=x.get(Product,int(line['product_id']));q=float(line['quantity']);price=float(line.get('unit_price',getattr(p,v.price_level)));z=stock(x,p.id,v.site_id)
   if z.quantity<q:raise HTTPException(409,f'Insufficient stock: {p.name}')
-  z.quantity-=q;sub+=q*price;cost+=q*p.cost;norm.append({'product_id':p.id,'sku':p.sku,'name':p.name,'quantity':q,'unit_price':price,'total':q*price});x.add(StockMove(product_id=p.id,site_id=v.site_id,quantity=-q,kind='sale',reference=v.number))
+  z.quantity-=q;sub+=q*price;cost+=q*p.cost;norm.append({'product_id':p.id,'sku':p.sku,'name':p.name,'quantity':q,'unit_price':price,'total':q*price});x.add(StockMove(product_id=p.id,site_id=v.site_id,quantity=q,reference=line.get('reference','SALE')))
  total=max(0,sub-v.discount);due=max(0,total-v.amount_paid)
  if due and v.customer_id:
   c=x.get(Customer,v.customer_id)
   if c.balance+due>c.credit_limit and c.credit_limit>0:raise HTTPException(409,'Customer credit limit exceeded')
   c.balance+=due
- z=Sale(number=v.number,site_id=v.site_id,customer_id=v.customer_id,cashier_id=u.id,currency=v.currency,exchange_rate=v.exchange_rate,price_level=v.price_level,lines=norm,subtotal=sub,discount=v.discount,total=total,cost_total=cost,payment_method=v.payment_method,amount_paid=v.amount_paid,balance_due=due);x.add(z);x.commit();return z
+ z=Sale(number=v.number,site_id=v.site_id,customer_id=v.customer_id,cashier_id=u.id,currency=v.currency,exchange_rate=v.exchange_rate,price_level=v.price_level,lines=norm,subtotal=sub,discount=v.discount,total=total,amount_paid=v.amount_paid,cost_total=cost)
+ x.add(z);x.commit();return z
 @app.post('/api/device/sales')
 def device_sale(v:SaleIn,x_device_key:str=Header(''),x:Session=Depends(db)):
  if x_device_key!=s.pos_device_key:raise HTTPException(401,'Invalid device key')
  fake=User(id=None,name='Device',email='device@local',role='cashier',password='');return sale(v,x,fake)
 @app.get('/api/dashboard')
 def dash(x:Session=Depends(db),u=Depends(current)):
- ss=x.scalars(select(Sale)).all();ps=x.scalars(select(Product)).all();stockv=sum(z.quantity*x.get(Product,z.product_id).cost for z in x.scalars(select(Stock)).all());low=sum(1 for p in ps if sum(z.quantity for z in x.scalars(select(Stock).where(Stock.product_id==p.id)))<=p.reorder)
- return {'sales_count':len(ss),'revenue':sum(z.total for z in ss),'gross_profit':sum(z.total-z.cost_total for z in ss),'stock_value':stockv,'low_stock':low,'debtors':x.scalar(select(func.sum(Customer.balance))) or 0,'creditors':x.scalar(select(func.sum(Supplier.balance))) or 0}
+ ss=x.scalars(select(Sale)).all();ps=x.scalars(select(Product)).all();stockv=sum(z.quantity*x.get(Product,z.product_id).cost for z in x.scalars(select(Stock)).all());low=sum(1 for p in ps if sum([z.quantity for z in x.scalars(select(Stock).where(Stock.product_id==p.id))])<p.reorder)
+ gross_profit = sum((z.total - getattr(z,'cost_total',0)) for z in ss)
+ direct_expenses = x.scalar(select(func.sum(Expense.amount)).join(ExpenseCategory, Expense.category_id==ExpenseCategory.id).where(ExpenseCategory.kind=='direct')) or 0
+ indirect_expenses = x.scalar(select(func.sum(Expense.amount)).join(ExpenseCategory, Expense.category_id==ExpenseCategory.id).where(ExpenseCategory.kind=='indirect')) or 0
+ operating_profit = gross_profit - indirect_expenses
+ return {'sales_count':len(ss),'revenue':sum(z.total for z in ss),'gross_profit':gross_profit,'stock_value':stockv,'low_stock':low,'debtors':x.scalar(select(func.sum(Customer.balance))).scalar() if x.scalar(select(func.sum(Customer.balance))) else 0,'direct_expenses':direct_expenses,'indirect_expenses':indirect_expenses,'operating_profit':operating_profit}
