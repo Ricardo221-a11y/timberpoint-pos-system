@@ -7,6 +7,7 @@ import {
   NavLink,
   Navigate,
   Outlet,
+  Link,
 } from "react-router-dom";
 import { api, login, tk } from "./api";
 import "./styles.css";
@@ -57,8 +58,8 @@ function Layout() {
             Creditors
           </NavLink>
 
-          {/* Accounts module with Expenses and Ledger */}
-          <NavLink to="/accounts/expenses" onClick={closeMenu}>
+          {/* Accounts module entry (goes to accounts overview) */}
+          <NavLink to="/accounts/overview" onClick={closeMenu}>
             Accounts
           </NavLink>
 
@@ -407,73 +408,204 @@ function POS() {
   );
 }
 
-function Dashboard() {
-  let [d, s] = useState({});
+function AccountsLayout({ children }) {
+  return (
+    <div>
+      <div className="top">
+        <h1>Accounts & Financial Workspace</h1>
+        <p>Accounts receivable, payable liabilities, double-entry general ledger, and expenses</p>
+      </div>
+      <div className="tabs">
+        <Link to="overview" className="tab">Overview</Link>
+        <Link to="receivables" className="tab">Receivables (AR)</Link>
+        <Link to="payables" className="tab">Payables (AP)</Link>
+        <Link to="gl" className="tab">General Ledger (GL)</Link>
+        <Link to="expenses" className="tab">Expenses</Link>
+      </div>
+      <div style={{ marginTop: 16 }}>
+        <Outlet />
+      </div>
+    </div>
+  );
+}
+
+function AccountsOverview() {
+  const [d, setD] = useState({});
+
   useEffect(() => {
-    api("/api/dashboard").then(s);
+    api('/api/dashboard').then(setD).catch(()=>{});
   }, []);
 
   return (
     <>
-      <div className="top">
-        <h1>Business Dashboard</h1>
-      </div>
       <div className="grid">
-        {[
-          ["Revenue", d.revenue],
-          ["Gross profit", d.gross_profit],
-          ["Stock value", d.stock_value],
-          ["Low stock", d.low_stock],
-          ["Debtors", d.debtors],
-          ["Creditors", d.creditors],
-          ["Direct expenses", d.direct_expenses],
-          ["Indirect expenses", d.indirect_expenses],
-          ["Operating profit", d.operating_profit],
-        ].map(([a, b]) => (
-          <div className="card stat" key={a}>
-            <span>{a}</span>
-            <strong>
-              {a === "Low stock" ? b : "$" + Number(b || 0).toFixed(2)}
-            </strong>
-          </div>
-        ))}
+        <div className="card stat">
+          <span>A/R OUTSTANDING</span>
+          <strong>${Number(d.debtors || d.debtors || 0).toFixed(2)}</strong>
+          <div className="muted">{d.debtors ? `${d.debtors} outstanding` : '0 active corporate client accounts'}</div>
+        </div>
+        <div className="card stat">
+          <span>A/P LIABILITIES</span>
+          <strong>${Number(d.creditors || 0).toFixed(2)}</strong>
+          <div className="muted">{d.creditors ? `${d.creditors} vendor invoices awaiting disbursement` : '0 vendor invoices'}</div>
+        </div>
+        <div className="card stat">
+          <span>OPERATING EXPENSES</span>
+          <strong>${Number((d.indirect_expenses||0)).toFixed(2)}</strong>
+          <div className="muted">Current month verified receipts</div>
+        </div>
+      </div>
+
+      <div className="card">
+        <h3>Provisional Monthly Profit & Loss (P&L)</h3>
+        <div className="pl-row"><span>Gross POS Retail & Beverage Revenue</span><strong className="green">${Number(d.revenue||0).toFixed(2)}</strong></div>
+        <div className="pl-row"><span>Less: Cost of Goods Sold (COGS)</span><strong className="red">-${Number(d.cogs||d.cost_of_goods_sold||0).toFixed(2)}</strong></div>
+        <div className="pl-row"><span>Gross Operating Margin</span><strong>${Number(d.gross_profit||0).toFixed(2)}</strong></div>
+        <div className="pl-row"><span>Operating Expenses & Utilities</span><strong className="red">-${Number(d.indirect_expenses||0).toFixed(2)}</strong></div>
+        <div className="pl-row total"><span>Net Estimated Operating Profit</span><strong className="green">${Number(d.operating_profit|| ( (d.gross_profit||0) - (d.indirect_expenses||0) ) ).toFixed(2)}</strong></div>
       </div>
     </>
   );
 }
 
-function TablePage({ title, path }) {
-  let [r, s] = useState([]);
-  useEffect(() => {
-    api(path).then(s);
-  }, [path]);
+function AccountsReceivables() {
+  const [customers, setCustomers] = useState([]);
+
+  useEffect(()=>{
+    api('/api/customers').then(setCustomers).catch(()=>{});
+  },[]);
+
+  function statusFor(c){
+    if(!c.balance || c.balance<=0) return 'PAID';
+    // simple heuristic: if credit_limit>0 and balance>0 return PARTIAL else OVERDUE
+    if(c.credit_limit && c.balance>0) return 'PARTIAL';
+    return 'OVERDUE';
+  }
 
   return (
-    <>
-      <div className="top">
-        <h1>{title}</h1>
-      </div>
+    <div>
+      <h2>Accounts Receivable Ledger (Customer Aging)</h2>
       <div className="card">
         <table className="table">
-          <thead>
-            <tr>
-              <th>Reference</th>
-              <th>Name / Details</th>
-              <th>Amount / Stock</th>
-            </tr>
-          </thead>
+          <thead><tr><th>Customer</th><th>Contact</th><th>Balance Due</th><th>Status</th></tr></thead>
           <tbody>
-            {r.map((x, i) => (
-              <tr key={i}>
-                <td>{x.number || x.code || x.sku}</td>
-                <td>{x.name || x.payment_method || x.category}</td>
-                <td>{x.total ?? x.balance ?? x.quantity}</td>
+            {customers.map(c=> (
+              <tr key={c.id}>
+                <td>{c.code}</td>
+                <td>{c.name}<br/><small className="muted">{c.email}</small></td>
+                <td>${Number(c.balance||0).toFixed(2)}</td>
+                <td><span className={`pill ${statusFor(c).toLowerCase()}`}>{statusFor(c)}</span></td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-    </>
+    </div>
+  );
+}
+
+function AccountsPayables(){
+  const [suppliers, setSuppliers] = useState([]);
+  useEffect(()=>{
+    api('/api/suppliers').then(setSuppliers).catch(()=>{});
+  },[]);
+
+  function statusFor(s){
+    if(!s.balance || s.balance<=0) return 'PAID';
+    return 'UNPAID';
+  }
+
+  return (
+    <div>
+      <h2>Accounts Payable Ledger (Vendor Liabilities)</h2>
+      <div className="card">
+        <table className="table">
+          <thead><tr><th>Bill #</th><th>Vendor</th><th>Category</th><th>Amount</th><th>Status</th></tr></thead>
+          <tbody>
+            {suppliers.map(s=> (
+              <tr key={s.id}>
+                <td>{s.code || `BILL-VEND-${s.id}`}</td>
+                <td>{s.name}</td>
+                <td className="muted">{s.category || 'Inventory Cost'}</td>
+                <td>${Number(s.balance||0).toFixed(2)}</td>
+                <td><span className={`pill ${statusFor(s).toLowerCase()}`}>{statusFor(s)}</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function AccountsGL(){
+  const [vouchers, setVouchers] = useState([]);
+
+  useEffect(()=>{
+    Promise.all([api('/api/sales'), api('/api/expenses')]).then(([sales, exps])=>{
+      // Map sales to voucher-like entries (revenue & COGS allocation)
+      let rows = [];
+      for(let s of sales){
+        rows.push({
+          voucher_ref: `JV-SALE-${s.id || s.number}`,
+          date: s.created_at || s.date || null,
+          description: `Daily POS Sales ${s.number || ''}`,
+          debit_account: '1010 - Operating Cash / Merchant Bank',
+          credit_account: '4010 - POS Merchandise & Beverage Revenue',
+          amount: s.total || 0,
+          posted_by: s.cashier_id || s.cashier || ''
+        });
+        // COGS allocation row (if cost_total exists)
+        if(s.cost_total){
+          rows.push({
+            voucher_ref: `JV-SALE-COGS-${s.id || s.number}`,
+            date: s.created_at || s.date || null,
+            description: 'Inventory Cost of Goods Sold Allocation',
+            debit_account: '5010 - Cost of Goods Sold (COGS)',
+            credit_account: '1200 - Merchandise Inventory Asset',
+            amount: s.cost_total || 0,
+            posted_by: s.cashier_id || ''
+          });
+        }
+      }
+      // Map expenses to ledger entries
+      for(let e of exps){
+        rows.push({
+          voucher_ref: `JV-EXP-${e.id}`,
+          date: e.date || null,
+          description: e.notes || (e.category?.name || 'Expense'),
+          debit_account: `${e.category?.name || 'Expense'} - ${e.category?.kind || ''}`,
+          credit_account: '1010 - Operating Cash',
+          amount: e.amount || 0,
+          posted_by: ''
+        });
+      }
+      setVouchers(rows.sort((a,b)=> (b.date||'') > (a.date||'') ? 1:-1));
+    }).catch(()=>{});
+  },[]);
+
+  return (
+    <div>
+      <h2>General Ledger Journal Vouchers</h2>
+      <div className="card">
+        <table className="table">
+          <thead><tr><th>Voucher Ref</th><th>Date</th><th>Description</th><th>Debit Account</th><th>Credit Account</th><th>Amount</th><th>Posted By</th></tr></thead>
+          <tbody>
+            {vouchers.map(v=> (
+              <tr key={v.voucher_ref}>
+                <td>{v.voucher_ref}</td>
+                <td>{v.date ? new Date(v.date).toLocaleDateString() : ''}</td>
+                <td>{v.description}</td>
+                <td style={{color:'#2ed573'}}>{v.debit_account}</td>
+                <td style={{color:'#2f80ed'}}>{v.credit_account}</td>
+                <td><strong>${Number(v.amount||0).toFixed(2)}</strong></td>
+                <td>{v.posted_by}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
@@ -603,7 +735,7 @@ function Expenses() {
 function Ledger() {
   const [rows, setRows] = useState([]);
   useEffect(()=>{
-    api('/api/expenses').then(setRows);
+    api('/api/expenses').then(setRows).catch(()=>{});
   },[]);
 
   return (
@@ -646,27 +778,22 @@ createRoot(document.getElementById("root")).render(
         }
       >
         <Route path="/" element={<POS />} />
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route
-          path="/stock"
-          element={<TablePage title="Stock" path="/api/products" />}
-        />
-        <Route
-          path="/sales"
-          element={<TablePage title="Sales" path="/api/sales" />}
-        />
-        <Route
-          path="/customers"
-          element={
-            <TablePage title="Customers & Debtors" path="/api/customers" />
-          }
-        />
-        <Route
-          path="/suppliers"
-          element={
-            <TablePage title="Suppliers & Creditors" path="/api/suppliers" />
-          }
-        />
+        <Route path="/dashboard" element={<AccountsOverview />} />
+        <Route path="/stock" element={<TablePage title="Stock" path="/api/products" />} />
+        <Route path="/sales" element={<TablePage title="Sales" path="/api/sales" />} />
+        <Route path="/customers" element={<TablePage title="Customers & Debtors" path="/api/customers" />} />
+        <Route path="/suppliers" element={<TablePage title="Suppliers & Creditors" path="/api/suppliers" />} />
+
+        {/* Accounts hub */}
+        <Route path="/accounts" element={<AccountsLayout />}>
+          <Route path="overview" element={<AccountsOverview />} />
+          <Route path="receivables" element={<AccountsReceivables />} />
+          <Route path="payables" element={<AccountsPayables />} />
+          <Route path="gl" element={<AccountsGL />} />
+          <Route path="expenses" element={<Expenses />} />
+        </Route>
+
+        {/* keep legacy routes for direct access */}
         <Route path="/accounts/expenses" element={<Expenses />} />
         <Route path="/accounts/ledger" element={<Ledger />} />
       </Route>
