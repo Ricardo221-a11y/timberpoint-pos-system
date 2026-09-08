@@ -1175,16 +1175,26 @@ h1,h2,h3{margin:0}
 }
 
 /* =========================================================
-   MOBILE RESPONSIVE
+   RESPONSIVE BREAKPOINTS
+   Desktop-first: collapse gracefully at real tablet widths
    ========================================================= */
 
-@media(max-width:1200px){
-    .tp-stage{grid-template-columns:420px 1fr;padding:18px}
-    .tp-header-inner{grid-template-columns:auto 1fr;gap:14px}
-    .tp-actions{grid-column:1/-1;justify-content:flex-start;flex-wrap:wrap}
+@media(max-width:1150px){
+    .tp-stage{grid-template-columns:420px 1fr;padding:18px 20px}
+    .tp-mod{padding:7px 11px;font-size:12.5px}
+    .tp-select{font-size:12px;padding:7px 10px}
+    .tp-chip{padding:7px 11px;font-size:12px}
+    .tp-logout{padding:7px 11px;font-size:12px}
 }
 
-@media(max-width:1000px){
+@media(max-width:980px){
+    .tp-header-inner{grid-template-columns:auto 1fr;gap:12px}
+    .tp-actions{grid-column:1/-1;justify-content:flex-start;flex-wrap:wrap}
+    .tp-modules{order:2;grid-column:1/-1;justify-content:flex-start}
+    .tp-stage{grid-template-columns:380px 1fr;padding:16px}
+}
+
+@media(max-width:800px){
     .tp-stage{grid-template-columns:1fr;padding:14px}
     .tp-ticket{
         position:static;
@@ -1193,10 +1203,11 @@ h1,h2,h3{margin:0}
     .tp-hero{grid-template-columns:1fr;padding:20px}
     .tp-hero-text h1{font-size:22px}
     .tp-hero-stats{grid-template-columns:repeat(3,1fr)}
-    .tp-modules{order:3;grid-column:1/-1;justify-content:flex-start}
+    .tp-searchbar{grid-template-columns:1fr 110px}
+    .tp-grid{grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px}
 }
 
-@media(max-width:900px){
+@media(max-width:640px){
     /* sidebar pages */
     .layout{grid-template-columns:1fr}
     .hamburger{display:flex}
@@ -1214,14 +1225,14 @@ h1,h2,h3{margin:0}
     .card{overflow-x:auto}
 
     /* POS */
-    .tp-searchbar{grid-template-columns:1fr 100px}
-    .tp-grid{grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}
     .tp-pay-methods{grid-template-columns:repeat(2,1fr)}
     .tp-quick{grid-template-columns:repeat(3,1fr)}
     .tp-field-half{grid-template-columns:1fr}
     .tp-cart-head,
     .tp-line{grid-template-columns:26px 1fr 80px 70px 26px;gap:4px}
     .tp-stat-num{font-size:18px}
+    .tp-grid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+    .tp-searchbar{grid-template-columns:1fr 100px}
 }
 
 /* =========================================================
