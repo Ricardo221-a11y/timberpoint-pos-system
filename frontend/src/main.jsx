@@ -29,9 +29,7 @@ function Layout() {
         ☰
       </button>
 
-      {menuOpen && (
-        <div className="overlay" onClick={closeMenu} />
-      )}
+      {menuOpen && <div className="overlay" onClick={closeMenu} />}
 
       <aside className={`side${menuOpen ? " open" : ""}`}>
         <div className="logo">
@@ -58,6 +56,12 @@ function Layout() {
           <NavLink to="/suppliers" onClick={closeMenu}>
             Creditors
           </NavLink>
+
+          {/* Accounts module with Expenses and Ledger */}
+          <NavLink to="/accounts/expenses" onClick={closeMenu}>
+            Accounts
+          </NavLink>
+
           <a
             href="#"
             onClick={() => {
@@ -116,8 +120,8 @@ function POS() {
   let [products, setProducts] = useState([]),
     [sites, setSites] = useState([]),
     [customers, setCustomers] = useState([]),
-    [site, setSite] = useState(""),
-    [cust, setCust] = useState(""),
+    [site, setSite] = useState("") ,
+    [cust, setCust] = useState("") ,
     [level, setLevel] = useState("retail"),
     [currency, setCurrency] = useState("USD"),
     [rate, setRate] = useState(1),
@@ -197,9 +201,7 @@ function POS() {
         : null;
 
       if (!navigator.onLine) {
-        let q = JSON.parse(
-          localStorage.getItem("offlineSales") || "[]"
-        );
+        let q = JSON.parse(localStorage.getItem("offlineSales") || "[]");
         q.push(payload);
         localStorage.setItem("offlineSales", JSON.stringify(q));
         setMsg("Sale queued offline");
@@ -316,9 +318,7 @@ function POS() {
               <span>${(x.quantity * x.unit_price).toFixed(2)}</span>
               <button
                 onClick={() =>
-                  setCart((c) =>
-                    c.filter((y) => y.product_id !== x.product_id)
-                  )
+                  setCart((c) => c.filter((y) => y.product_id !== x.product_id))
                 }
               >
                 ×
@@ -426,6 +426,9 @@ function Dashboard() {
           ["Low stock", d.low_stock],
           ["Debtors", d.debtors],
           ["Creditors", d.creditors],
+          ["Direct expenses", d.direct_expenses],
+          ["Indirect expenses", d.indirect_expenses],
+          ["Operating profit", d.operating_profit],
         ].map(([a, b]) => (
           <div className="card stat" key={a}>
             <span>{a}</span>
@@ -474,6 +477,161 @@ function TablePage({ title, path }) {
   );
 }
 
+function Expenses() {
+  const [cats, setCats] = useState([]);
+  const [exps, setExps] = useState([]);
+  const [sites, setSites] = useState([]);
+  const [form, setForm] = useState({ category_id: "", amount: "", date: "", site_id: "", notes: "" });
+  const [summary, setSummary] = useState({ direct: 0, indirect: 0 });
+
+  async function load() {
+    const [c, e, s] = await Promise.all([
+      api('/api/expense-categories'),
+      api('/api/expenses'),
+      api('/api/sites'),
+    ]);
+    setCats(c);
+    setExps(e);
+    setSites(s);
+
+    // compute direct/indirect totals from summary endpoint
+    try {
+      const sums = await api('/api/reports/expenses-summary');
+      let d = 0, ii = 0;
+      for (let r of sums) {
+        if (r.kind === 'direct') d += Number(r.total || 0);
+        else if (r.kind === 'indirect') ii += Number(r.total || 0);
+      }
+      setSummary({ direct: d, indirect: ii });
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  useEffect(() => { load(); }, []);
+
+  async function submit(e) {
+    e.preventDefault();
+    try {
+      await api('/api/expenses', { method: 'POST', body: JSON.stringify({
+        category_id: Number(form.category_id),
+        amount: Number(form.amount),
+        date: form.date || undefined,
+        site_id: form.site_id ? Number(form.site_id) : undefined,
+        notes: form.notes,
+      }) });
+      setForm({ category_id: '', amount: '', date: '', site_id: '', notes: '' });
+      load();
+    } catch (err) {
+      alert(err.message || err);
+    }
+  }
+
+  return (
+    <>
+      <div className="top">
+        <h1>Accounts — Expenses</h1>
+      </div>
+
+      <div className="grid">
+        <div className="card">
+          <h3>New expense</h3>
+          <form onSubmit={submit}>
+            <div className="field">
+              <label>Category</label>
+              <select value={form.category_id} onChange={(e)=>setForm({...form, category_id: e.target.value})}>
+                <option value="">-- pick --</option>
+                {cats.map(c=> <option key={c.id} value={c.id}>{c.name} ({c.kind})</option>)}
+              </select>
+            </div>
+            <div className="field">
+              <label>Amount</label>
+              <input type="number" value={form.amount} onChange={(e)=>setForm({...form, amount: e.target.value})} />
+            </div>
+            <div className="field">
+              <label>Date</label>
+              <input type="date" value={form.date} onChange={(e)=>setForm({...form, date: e.target.value})} />
+            </div>
+            <div className="field">
+              <label>Site</label>
+              <select value={form.site_id} onChange={(e)=>setForm({...form, site_id: e.target.value})}>
+                <option value="">-- none --</option>
+                {sites.map(s=> <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+            <div className="field">
+              <label>Notes</label>
+              <input value={form.notes} onChange={(e)=>setForm({...form, notes: e.target.value})} />
+            </div>
+            <div className="actions">
+              <button className="btn" type="submit">Create expense</button>
+            </div>
+          </form>
+        </div>
+
+        <div className="card">
+          <h3>Summary</h3>
+          <div className="stat">Direct: ${Number(summary.direct || 0).toFixed(2)}</div>
+          <div className="stat">Indirect: ${Number(summary.indirect || 0).toFixed(2)}</div>
+        </div>
+      </div>
+
+      <div className="card">
+        <h3>Recent expenses</h3>
+        <table className="table">
+          <thead>
+            <tr><th>Date</th><th>Category</th><th>Kind</th><th>Amount</th><th>Site</th><th>Notes</th></tr>
+          </thead>
+          <tbody>
+            {exps.map((x)=> (
+              <tr key={x.id}>
+                <td>{new Date(x.date).toLocaleDateString()}</td>
+                <td>{x.category?.name || x.category}</td>
+                <td>{x.category?.kind || ''}</td>
+                <td>${Number(x.amount).toFixed(2)}</td>
+                <td>{x.site_id || ''}</td>
+                <td>{x.notes}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+function Ledger() {
+  const [rows, setRows] = useState([]);
+  useEffect(()=>{
+    api('/api/expenses').then(setRows);
+  },[]);
+
+  return (
+    <>
+      <div className="top"><h1>Accounts — Ledger</h1></div>
+      <div className="card">
+        <table className="table">
+          <thead>
+            <tr><th>Date</th><th>Category</th><th>Kind</th><th>Amount</th><th>Site</th><th>Ref</th></tr>
+          </thead>
+          <tbody>
+            {rows.map(r=> (
+              <tr key={r.id}>
+                <td>{new Date(r.date).toLocaleDateString()}</td>
+                <td>{r.category?.name || r.category_id}</td>
+                <td>{r.category?.kind || ''}</td>
+                <td>${Number(r.amount).toFixed(2)}</td>
+                <td>{r.site_id || ''}</td>
+                <td>{r.reference}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
 let G = ({ children }) => (tk() ? children : <Navigate to="/login" />);
 
 createRoot(document.getElementById("root")).render(
@@ -509,6 +667,8 @@ createRoot(document.getElementById("root")).render(
             <TablePage title="Suppliers & Creditors" path="/api/suppliers" />
           }
         />
+        <Route path="/accounts/expenses" element={<Expenses />} />
+        <Route path="/accounts/ledger" element={<Ledger />} />
       </Route>
     </Routes>
   </BrowserRouter>
