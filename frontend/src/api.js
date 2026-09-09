@@ -34,6 +34,10 @@ export async function api(path, options = {}) {
   }
 
   if (!response.ok) {
+    if (response.status === 401 && token) {
+      localStorage.removeItem("token");
+      if (location.pathname !== "/login") location.href = "/login";
+    }
     throw new Error(
       data.detail ||
       data.message ||
