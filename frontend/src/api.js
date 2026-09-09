@@ -66,3 +66,17 @@ export async function login(
 
   return result;
 }
+
+export async function downloadBackup() {
+  const response = await fetch(`${API_BASE}/api/backup/export`, {
+    headers: { Authorization: `Bearer ${tk()}` },
+  });
+  if (!response.ok) throw new Error("Backup could not be created");
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `timberpoint-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
