@@ -1090,15 +1090,6 @@ h1,h2,h3{margin:0}
 .receipt p{color:#555;margin:6px 0 10px}
 
 .actions{display:flex;gap:8px;flex-wrap:wrap}
-.field{display:grid;gap:6px;margin-top:13px}
-.field label{font-size:12px;font-weight:800;letter-spacing:.35px;color:var(--tp-text-2)}
-.field input,.field select{
-    width:100%;min-height:42px;padding:10px 12px;
-    background:#fff;color:var(--tp-text);
-    border:1px solid var(--tp-line-2);border-radius:10px;outline:none;
-}
-.field input:focus,.field select:focus{border-color:var(--tp-green-500);box-shadow:0 0 0 4px rgba(45,154,101,.12)}
-.card form{max-width:520px}
 .actions input,.actions select{
     background:#fff;color:var(--tp-text);
     border:1px solid var(--tp-line-2);
@@ -1111,6 +1102,27 @@ h1,h2,h3{margin:0}
     margin-top:14px;
     border-bottom:1px solid var(--tp-line-2);padding-bottom:0;
 }
+.accounts-workspace{max-width:1440px;margin:0 auto}
+.accounts-header{align-items:flex-end;border-bottom:1px solid var(--tp-line-2);padding-bottom:18px}
+.accounts-header h1{font-size:clamp(24px,3vw,34px);letter-spacing:0}
+.accounts-header p{max-width:600px;text-align:right;line-height:1.45}
+.accounts-tabs{margin-top:18px;gap:6px;overflow-x:auto;flex-wrap:nowrap}
+.accounts-tabs .tab{white-space:nowrap;padding:12px 18px}
+.accounts-tabs .tab.active{background:var(--tp-green-900);color:#fff4c7;border-color:var(--tp-green-900)}
+.accounts-content{margin-top:20px}
+.accounts-compose{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(240px,.8fr);gap:16px;align-items:start}
+.accounts-compose .card{margin-top:0}
+.accounts-form-card form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 16px}
+.accounts-form-card h3,.accounts-summary-card h3{margin-bottom:4px}
+.accounts-form-card h3{grid-column:1/-1}
+.accounts-field{display:grid;gap:6px}
+.accounts-field label{font-size:12px;color:var(--tp-muted);font-weight:800;letter-spacing:.3px}
+.accounts-field input,.accounts-field select{width:100%;min-height:42px;padding:10px 12px;border:1px solid var(--tp-line-2);border-radius:10px;background:#fff;outline:none}
+.accounts-field input:focus,.accounts-field select:focus{border-color:var(--tp-green-500);box-shadow:0 0 0 3px rgba(45,154,101,.12)}
+.accounts-form-card .actions{grid-column:1/-1;margin-top:2px}
+.accounts-summary-card .stat{display:grid;gap:8px;padding:10px 0;border-bottom:1px solid var(--tp-line)}
+.accounts-summary-card .stat:last-child{border-bottom:0}
+.accounts-summary-card .stat strong{font-size:24px}
 .tab{
     padding:10px 16px;text-decoration:none;
     color:var(--tp-text-2);background:var(--tp-surface-2);
@@ -1235,6 +1247,10 @@ h1,h2,h3{margin:0}
     .top{flex-direction:column;align-items:flex-start}
     .grid{grid-template-columns:1fr}
     .card{overflow-x:auto}
+    .accounts-header{align-items:flex-start}
+    .accounts-header p{text-align:left}
+    .accounts-compose{grid-template-columns:1fr}
+    .accounts-form-card form{grid-template-columns:1fr}
 
     /* POS */
     .tp-pay-methods{grid-template-columns:repeat(2,1fr)}
