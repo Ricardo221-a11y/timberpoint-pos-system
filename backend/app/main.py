@@ -61,9 +61,14 @@ def stock(x,pid,sid):
 def seed(x):
  if x.scalar(select(Site.id)):return
  st=Site(code='HAR-01',name='Harare Timber Shop');x.add(st);x.flush()
- ps=[('0380383M','600000001','Roofing timber 38 x 38 x 3m','Roofing Timber','38 x 38 x 3000mm',4,6.5,6,5.5,100),('07603848','600000002','Structural timber 76 x 38 x 4.8m','Structural Timber','76 x[...]
+ ps=[
+    ('0380383M','600000001','Roofing timber 38 x 38 x 3m','Roofing Timber','38 x 38 x 3000mm',4,6.5,6,5.5,100),
+    ('07603848','600000002','Structural timber 76 x 38 x 4.8m','Structural Timber','76 x 38 x 4800mm',8,14,13,12,80),
+    ('NAILS5KG','600000003','Galvanised nails 5kg','Hardware','5kg box',5,8,7.5,7,25),
+ ]
  for a,b,c,d,e,f,g,h,i,j in ps:
-  p=Product(sku=a,barcode=b,name=c,category=d,dimensions=e,cost=f,retail=g,contractor=h,bulk=i,reorder=j,unit='box' if a=='NAILS5KG' else 'length');x.add(p);x.flush();x.add(Stock(product_id=p.id,s[...]
+    p=Product(sku=a,barcode=b,name=c,category=d,dimensions=e,cost=f,retail=g,contractor=h,bulk=i,reorder=j,unit='box' if a=='NAILS5KG' else 'length')
+    x.add(p);x.flush();x.add(Stock(product_id=p.id,site_id=st.id,quantity=100))
  x.add(Customer(code='WALK-IN',name='Walk-in Customer',kind='retail'));
  x.add(Customer(code='CONT-001',name='Demo Contractor',kind='contractor',credit_limit=5000));
  x.add(Supplier(code='SUP-001',name='Demo Supplier'))
@@ -133,8 +138,13 @@ def login(v:Login,x:Session=Depends(db)):
 def sites(x:Session=Depends(db),u=Depends(current)):return x.scalars(select(Site)).all()
 @app.get('/api/products')
 def products(site_id:int|None=None,x:Session=Depends(db),u=Depends(current)):
- ps=x.scalars(select(Product).where(Product.active==True).order_by(Product.category,Product.name)).all();out=[]
- for p in ps:q=x.scalar(select(func.sum(Stock.quantity)).where(Stock.product_id==p.id,*(([Stock.site_id==site_id]) if site_id else []))) or 0;out.append({**{c.name:getattr(p,c.name) for c in Produ[...]
+ ps=x.scalars(select(Product).where(Product.active==True).order_by(Product.category,Product.name)).all()
+ out=[]
+ for p in ps:
+    q=x.scalar(select(func.sum(Stock.quantity)).where(Stock.product_id==p.id,*(([Stock.site_id==site_id]) if site_id else []))) or 0
+    row={column.name:getattr(p,column.name) for column in Product.__table__.columns}
+    row['quantity']=q
+    out.append(row)
  return out
 @app.post('/api/products')
 def product(v:ProductIn,x:Session=Depends(db),u=Depends(role('director','supervisor'))):z=Product(**v.model_dump());x.add(z);x.commit();return z
