@@ -12,6 +12,10 @@ import {
 import { api, downloadBackup, login, tk } from "./api";
 import "./styles.css";
 
+function RequireAuth({ children }) {
+  return tk() ? children : <Navigate to="/login" replace />;
+}
+
 function Layout() {
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -1144,18 +1148,20 @@ createRoot(document.getElementById("root")).render(
       <Route
         path="/"
         element={
-          <G>
-            <POS />
-          </G>
+          <RequireAuth>
+            <G><POS /></G>
+          </RequireAuth>
         }
       />
+
+      <Route path="/admin" element={<Navigate to="/dashboard" replace />} />
 
       {/* All other pages share the sidebar + main Layout */}
       <Route
         element={
-          <G>
-            <Layout />
-          </G>
+          <RequireAuth>
+            <G><Layout /></G>
+          </RequireAuth>
         }
       >
         <Route path="/dashboard" element={<AccountsOverview />} />
