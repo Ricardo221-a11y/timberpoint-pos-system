@@ -9,7 +9,7 @@ import {
   Outlet,
   Link,
 } from "react-router-dom";
-import { api, login, tk } from "./api";
+import { api, downloadBackup, login, tk } from "./api";
 import "./styles.css";
 
 function Layout() {
@@ -66,7 +66,7 @@ function Layout() {
           <a
             href="#"
             onClick={() => {
-              localStorage.clear();
+              localStorage.removeItem("token");
               location.href = "/login";
             }}
           >
@@ -134,6 +134,18 @@ function POS() {
   const [last, setLast] = useState(null);
   const [msg, setMsg] = useState("");
   const [toast, setToast] = useState("");
+  const [offlineCount, setOfflineCount] = useState(() => JSON.parse(localStorage.getItem("offlineSales") || "[]").length);
+  const [online, setOnline] = useState(navigator.onLine);
+
+  useEffect(() => {
+    const updateOnline = () => setOnline(navigator.onLine);
+    window.addEventListener("online", updateOnline);
+    window.addEventListener("offline", updateOnline);
+    return () => {
+      window.removeEventListener("online", updateOnline);
+      window.removeEventListener("offline", updateOnline);
+    };
+  }, []);
 
   const load = () =>
     Promise.all([
@@ -243,6 +255,7 @@ function POS() {
         const q = JSON.parse(localStorage.getItem("offlineSales") || "[]");
         q.push(payload);
         localStorage.setItem("offlineSales", JSON.stringify(q));
+        setOfflineCount(q.length);
         setMsg("Sale queued offline");
       } else {
         setLast(s);
@@ -258,18 +271,22 @@ function POS() {
 
   async function sync() {
     const q = JSON.parse(localStorage.getItem("offlineSales") || "[]");
+    const pending = [];
     for (const s of q) {
-      await api("/api/sales", { method: "POST", body: JSON.stringify(s) });
+      try {
+        await api("/api/sales", { method: "POST", body: JSON.stringify(s) });
+      } catch (error) {
+        pending.push(s);
+      }
     }
-    localStorage.removeItem("offlineSales");
-    showToast(`${q.length} offline sale(s) synced`);
+    localStorage.setItem("offlineSales", JSON.stringify(pending));
+    setOfflineCount(pending.length);
+    showToast(`${q.length - pending.length} offline sale(s) synced`);
     setMsg("");
     load();
   }
 
   const go = (path) => { location.href = path; };
-  const offlineCount = JSON.parse(localStorage.getItem("offlineSales") || "[]").length;
-
   return (
     <div className="tp-shell">
       {/* ========== TOP NAV (replaces sidebar on this page) ========== */}
@@ -317,10 +334,10 @@ function POS() {
               🔄 Sync
               {offlineCount > 0 && <span className="tp-badge">{offlineCount}</span>}
             </button>
-            <span className={"tp-pill tp-net " + (navigator.onLine ? "on" : "off")}>
-              <span className="tp-dot" /> {navigator.onLine ? "Online" : "Offline"}
+            <span className={"tp-pill tp-net " + (online ? "on" : "off")}>
+              <span className="tp-dot" /> {online ? "Online" : "Offline"}
             </span>
-            <button className="tp-logout" onClick={() => { localStorage.clear(); location.href = "/login"; }}>Sign out</button>
+            <button className="tp-logout" onClick={() => { localStorage.removeItem("token"); location.href = "/login"; }}>Sign out</button>
           </div>
         </div>
       </header>
@@ -872,37 +889,37 @@ function Expenses() {
 
   return (
     <>
-      <div className="top">
+      <div className="top accounts-header">
         <h1>Accounts — Expenses</h1>
       </div>
 
-      <div className="grid">
-        <div className="card">
+      <div className="accounts-compose">
+        <div className="card accounts-form-card">
           <h3>New expense</h3>
           <form onSubmit={submit}>
-            <div className="field">
+            <div className="field accounts-field">
               <label>Category</label>
               <select value={form.category_id} onChange={(e)=>setForm({...form, category_id: e.target.value})}>
                 <option value="">-- pick --</option>
                 {cats.map(c=> <option key={c.id} value={c.id}>{c.name} ({c.kind})</option>)}
               </select>
             </div>
-            <div className="field">
+            <div className="field accounts-field">
               <label>Amount</label>
               <input type="number" value={form.amount} onChange={(e)=>setForm({...form, amount: e.target.value})} />
             </div>
-            <div className="field">
+            <div className="field accounts-field">
               <label>Date</label>
               <input type="date" value={form.date} onChange={(e)=>setForm({...form, date: e.target.value})} />
             </div>
-            <div className="field">
+            <div className="field accounts-field">
               <label>Site</label>
               <select value={form.site_id} onChange={(e)=>setForm({...form, site_id: e.target.value})}>
                 <option value="">-- none --</option>
                 {sites.map(s=> <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
-            <div className="field">
+            <div className="field accounts-field">
               <label>Notes</label>
               <input value={form.notes} onChange={(e)=>setForm({...form, notes: e.target.value})} />
             </div>
@@ -912,7 +929,7 @@ function Expenses() {
           </form>
         </div>
 
-        <div className="card">
+        <div className="card accounts-summary-card">
           <h3>Summary</h3>
           <div className="stat">Direct: ${Number(summary.direct || 0).toFixed(2)}</div>
           <div className="stat">Indirect: ${Number(summary.indirect || 0).toFixed(2)}</div>
@@ -1085,20 +1102,31 @@ function TablePage({ title, path }) {
 }
 
 function AccountsLayout() {
+  async function backup() {
+    try {
+      await downloadBackup();
+    } catch (error) {
+      window.alert(error.message);
+    }
+  }
+
   return (
-    <div>
-      <div className="top">
-        <h1>Accounts &amp; Financial Workspace</h1>
-        <p>Accounts receivable, payable liabilities, double-entry general ledger, and expenses</p>
+    <div className="accounts-workspace">
+      <div className="top accounts-header">
+        <div>
+          <h1>Accounts &amp; Financial Workspace</h1>
+          <p>Accounts receivable, payable liabilities, double-entry general ledger, and expenses</p>
+        </div>
+        <button className="btn alt accounts-backup" type="button" onClick={backup}>Download backup</button>
       </div>
-      <div className="tabs">
-        <Link to="overview" className="tab">Overview</Link>
-        <Link to="receivables" className="tab">Receivables (AR)</Link>
-        <Link to="payables" className="tab">Payables (AP)</Link>
-        <Link to="gl" className="tab">General Ledger (GL)</Link>
-        <Link to="expenses" className="tab">Expenses</Link>
-      </div>
-      <div style={{ marginTop: 16 }}>
+      <nav className="tabs accounts-tabs" aria-label="Accounts modules">
+        <NavLink to="overview" className="tab">Overview</NavLink>
+        <NavLink to="receivables" className="tab">Receivables (AR)</NavLink>
+        <NavLink to="payables" className="tab">Payables (AP)</NavLink>
+        <NavLink to="gl" className="tab">General Ledger (GL)</NavLink>
+        <NavLink to="expenses" className="tab">Expenses</NavLink>
+      </nav>
+      <div className="accounts-content">
         <Outlet />
       </div>
     </div>
