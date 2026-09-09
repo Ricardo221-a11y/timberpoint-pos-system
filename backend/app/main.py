@@ -3,7 +3,7 @@ from datetime import datetime
 from fastapi import FastAPI,Depends,HTTPException,Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel,EmailStr
-from sqlalchemy import select,func
+from sqlalchemy import select,func,inspect,text
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
 from jose import jwt,JWTError
@@ -37,6 +37,9 @@ class ExpenseIn(BaseModel):
     exchange_rate: float = 1.0
     reference: str = ''
     notes: str = ''
+
+class BackupImport(BaseModel):
+    sales: list[SaleIn] = []
 
 def make_token(u):return jwt.encode({'sub':str(u.id),'role':u.role},s.jwt_secret,algorithm='HS256')
 def current(t=Depends(oauth),x:Session=Depends(db)):
@@ -79,9 +82,31 @@ def seed(x):
          x.add(ExpenseCategory(name=n, kind=k))
  x.commit()
 
+def migrate_sales_table():
+ inspector = inspect(engine)
+ if 'sales' not in inspector.get_table_names(): return
+ existing = {column['name'] for column in inspector.get_columns('sales')}
+ additions = {
+    'currency': "VARCHAR(8) DEFAULT 'USD'",
+    'exchange_rate': 'FLOAT DEFAULT 1',
+    'price_level': "VARCHAR(20) DEFAULT 'retail'",
+    'lines': 'JSON',
+    'subtotal': 'FLOAT DEFAULT 0',
+    'discount': 'FLOAT DEFAULT 0',
+    'total': 'FLOAT DEFAULT 0',
+    'amount_paid': 'FLOAT DEFAULT 0',
+    'payment_method': "VARCHAR(40) DEFAULT 'cash'",
+    'cost_total': 'FLOAT DEFAULT 0',
+    'created_at': 'DATETIME',
+ }
+ with engine.begin() as connection:
+    for name, definition in additions.items():
+     if name not in existing: connection.execute(text(f'ALTER TABLE sales ADD COLUMN {name} {definition}'))
+
 @asynccontextmanager
 async def life(app):
  Base.metadata.create_all(engine)
+ migrate_sales_table()
  with DB() as x:
   if not x.scalar(select(User).where(User.email==s.admin_email)):x.add(User(name='Director',email=s.admin_email,role='director',password=pwd.hash(s.admin_password)));x.commit()
   if s.seed_demo:seed(x)
@@ -91,6 +116,14 @@ app=FastAPI(title='TimberPoint POS API',version='1.0',lifespan=life);app.add_mid
 def root():return {'name':'TimberPoint POS API','docs':'/docs'}
 @app.get('/health')
 def health():return {'status':'ok'}
+@app.get('/api/sync/status')
+def sync_status(x:Session=Depends(db),u=Depends(current)):
+ return {'status':'ok','server_time':datetime.utcnow().isoformat()+'Z','sales':x.scalar(select(func.count(Sale.id))) or 0,'expenses':x.scalar(select(func.count(Expense.id))) or 0,'products':x.scalar(select(func.count(Product.id))) or 0}
+@app.get('/api/backup/export')
+def backup_export(x:Session=Depends(db),u=Depends(role('director','supervisor'))):
+ def rows(model):
+  return [{column.name:getattr(row,column.name) for column in model.__table__.columns} for row in x.scalars(select(model)).all()]
+ return {'format':'timberpoint-backup-v1','created_at':datetime.utcnow().isoformat()+'Z','data':{'sites':rows(Site),'products':rows(Product),'stock':rows(Stock),'customers':rows(Customer),'suppliers':rows(Supplier),'sales':rows(Sale),'customer_payments':rows(CustomerPayment),'supplier_entries':rows(SupplierEntry),'stock_moves':rows(StockMove),'expense_categories':rows(ExpenseCategory),'expenses':rows(Expense)}}
 @app.post('/api/auth/login')
 def login(v:Login,x:Session=Depends(db)):
  u=x.scalar(select(User).where(User.email==v.email))
